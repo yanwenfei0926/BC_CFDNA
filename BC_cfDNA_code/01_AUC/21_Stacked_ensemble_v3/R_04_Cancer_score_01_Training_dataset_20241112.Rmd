@@ -1,0 +1,228 @@
+---
+html_document: default
+author: "Jia"
+date: '2024-09-25'
+output:
+  html_document:
+    df_print: paged
+title: "receiver operating characteristic curve (ROC curve)"
+---
+
+# 1. loading library and function
+```{r}
+rm(list = ls())
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+# 2. loading data
+```{r}
+# data_length <- read.table("/Users/xuewei/ZxProjects/20240408_GC_cfDNA/00_backup/GC_length.txt", sep = "\t", header = TRUE, check.names = FALSE, row.names = NULL)
+Clinical <- read_rds("D:/Desktop/项目/20240418_BC_cfDNA/01_Clinical_information/BC_Clinical_info_20240924.rds")
+colnames(Clinical)[colnames(Clinical)=="SampleID"] <- "Sample"
+
+data_length_coverage_training <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/20240918_BC_GBM_v2/00_Feature/20240913_training_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+data_length_coverage_internal <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/20240918_BC_GBM_v2/00_Feature/20240913_internal_validation_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+data_length_coverage_external <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/20240918_BC_GBM_v2/00_Feature/20240913_external_validation_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+
+data_length_coverage_training <- data_length_coverage_training %>% 
+  select(SampleID,MEDIAN_INSERT_SIZE, MODE_INSERT_SIZE,MEAN_INSERT_SIZE,Coverage)
+data_length_coverage_internal <- data_length_coverage_internal %>% 
+  select(SampleID,MEDIAN_INSERT_SIZE, MODE_INSERT_SIZE,MEAN_INSERT_SIZE,Coverage)
+data_length_coverage_external <- data_length_coverage_external %>% 
+  select(SampleID,MEDIAN_INSERT_SIZE, MODE_INSERT_SIZE,MEAN_INSERT_SIZE,Coverage)
+data_length_coverage <- bind_rows(data_length_coverage_training, data_length_coverage_internal, data_length_coverage_external)
+
+colnames(data_length_coverage) <- c("Sample", "MEDIAN_INSERT_SIZE", "MODE_INSERT_SIZE", "MEAN_INSERT_SIZE", "coverage")
+
+
+data_feature <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/20240918_BC_GBM_v2/00_Feature/20240924_clinical_feature_rml.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(data_feature)[colnames(data_feature)=="SampleID"] <- "Sample"
+
+Training_Dataset <- read.xlsx("01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Training_Dataset) <- c("Sample", "actual", "predicted", "predicted_prob")
+
+```
+
+# 3. data processed
+## 3.1 join
+```{r}
+join_Clinical <- left_join(Clinical, data_length_coverage, by = c("Sample" = "Sample"))
+
+# join_Clinical2 <- join_Clinical %>% 
+#   filter(Subtype != "Undetermined")
+
+join_Training_dataset_Clinical <- Training_Dataset %>% 
+  left_join(join_Clinical, by = c("Sample" = "Sample"))%>% 
+  dplyr::mutate(Group_predicted = case_when(actual == 0 ~ "Benign",
+                                            actual == 1 ~ "Malignant",
+                                  )) %>%
+  distinct()
+
+data_feature <- data_feature %>%
+  select(-Gender, -Source, -Stage, -Subtype, -MI, -MI_Status, -MI_surgeryLM, -MI_surgeryLM_status, -MILM_surgery, -MILM_surgery_status, -surgery_LM, -surgery_LM_status, -Advanced_LM, -Subtype_status, -Advanced_LM_status, -T_stage, -M_stage, -N_stage, -N_Status, -MEDIAN_INSERT_SIZE, -MODE_INSERT_SIZE, -MEAN_INSERT_SIZE, -Coverage) 
+
+join_Training_dataset_feature <- join_Training_dataset_Clinical %>% 
+  left_join(data_feature, by = c("Sample" = "Sample")) %>% 
+  distinct()
+
+
+```
+
+# 4. plot
+## 4.1 Malignant score (predicted_prob)
+```{r}
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$predicted_prob)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$predicted_prob)
+p <- wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$predicted_prob,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$predicted_prob)
+p$p.value
+
+boxplot_MalignantScore <- data.frame(join_Training_dataset_feature) %>%
+  select(Group_predicted, predicted_prob)
+
+boxplot_MalignantScore$Group_predicted=factor(boxplot_MalignantScore$Group_predicted, levels=c('Benign', 'Malignant'))
+
+pdf("20250116_cfDNA_01_Cancer_score_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(boxplot_MalignantScore,aes(x=Group_predicted,y=predicted_prob,fill=factor(Group_predicted),color=factor(Group_predicted)))+
+  geom_boxplot(width=0.3, size = 1)+
+  geom_quasirandom(width=0.1, varwidth=TRUE, cex=2, method="quasirandom")+
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1)))+
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 9,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  annotate("text", x=1.36, y=median(boxplot_MalignantScore[boxplot_MalignantScore$Group_predicted=="Benign",]$predicted_prob), label=sprintf("%0.4f", median(boxplot_MalignantScore[boxplot_MalignantScore$Group_predicted=="Benign",]$predicted_prob)), color = "#000000", size = 7)+
+  annotate("text", x=2.36, y=median(boxplot_MalignantScore[boxplot_MalignantScore$Group_predicted=="Malignant",]$predicted_prob), label=sprintf("%0.4f", median(boxplot_MalignantScore[boxplot_MalignantScore$Group_predicted=="Malignant",]$predicted_prob)), color = "#000000", size = 7)+
+  theme_classic()+
+  theme(legend.position="NA")+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF"))+
+  scale_color_manual(values=c("#7897BE", "#BD7D76"))+
+  labs(x="", y="Cancer Score", title="", fill = "") +
+
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15))+
+  theme(plot.title = element_text(face="bold", color="black", size=15, hjust = 0.5))+
+  theme(axis.line = element_line(linewidth=0.5, colour="black"))+
+  theme(axis.ticks = element_line(linewidth=0.5, colour="black"), axis.ticks.length=unit(0.5, "lines"))+
+  theme(axis.text.x = element_text(face="bold", color="black", size=15),
+        axis.text.y = element_text(face="bold", color="black", size=15),
+        axis.title.x = element_text(face="bold", color="black", size=15),
+        axis.title.y = element_text(face="bold", color="black", size=15))
+dev.off()
+
+```
+
+
+
+
+
+# 5. Feature
+## 5.1 CEA
+```{r}
+join_Training_dataset_feature$CEA <- join_Training_dataset_feature$CEA %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$CEA)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$CEA)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$CEA,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$CEA)
+
+```
+
+## 5.2 CA199
+```{r}
+join_Training_dataset_feature$CA199 <- join_Training_dataset_feature$CA199 %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$CA199)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$CA199)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$CA199,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$CA199)
+
+```
+
+## 5.3 AFP
+```{r}
+join_Training_dataset_feature$AFP <- join_Training_dataset_feature$AFP %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$AFP)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$AFP)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$AFP,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$AFP)
+
+```
+## 5.4 CA242
+```{r}
+join_Training_dataset_feature$CEA <- join_Training_dataset_feature$CEA %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$CEA)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$CEA)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$CEA,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$CEA)
+
+```
+
+## 5.5 F1
+```{r}
+join_Training_dataset_feature$F1 <- join_Training_dataset_feature$F1 %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F1)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F1)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F1,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F1)
+
+```
+
+## 5.6 F2
+```{r}
+join_Training_dataset_feature$F2 <- join_Training_dataset_feature$F2 %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F2)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F2)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F2,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F2)
+
+```
+
+## 5.7 F3
+```{r}
+join_Training_dataset_feature$F3 <- join_Training_dataset_feature$F3 %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F3)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F3)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F3,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F3)
+
+```
+
+## 5.7 F4
+```{r}
+join_Training_dataset_feature$F4 <- join_Training_dataset_feature$F4 %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F4)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F4)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F4,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F4)
+
+```
+
+
+## 5.7 F1545
+```{r}
+join_Training_dataset_feature$F1545 <- join_Training_dataset_feature$F1545 %>% 
+  as.numeric()
+
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F1545)
+summary(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F1545)
+wilcox.test(join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Benign",]$F1545,join_Training_dataset_feature[join_Training_dataset_feature$Group_predicted=="Malignant",]$F1545)
+
+```
+

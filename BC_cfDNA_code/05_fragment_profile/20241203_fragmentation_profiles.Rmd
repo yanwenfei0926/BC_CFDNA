@@ -1,0 +1,261 @@
+---
+title: "Fragmentation profiles"
+author: "Liu"
+date: "2024-12-03"
+output: html_document
+---
+
+```{r}
+rm(list = ls())
+library(ggplot2)
+library(magrittr)
+library(tidyverse)
+library(fs)
+library(grid)
+library(data.table)
+library(cowplot)
+library(devtools)
+library(here)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(pheatmap))
+options(dplyr.summarise.inform = FALSE)
+# 2 lines below added because of some idiosyncrasies of linux
+options(bitmapType="cairo")
+Sys.setenv(MKL_THREADING_LAYER="GNU")
+```
+
+```{r}
+feature_data <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/06_Subtype_LWJ/20241115_BC_cfDNA_subtype_v5/20240913-all_data_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+
+clinal_data <- read.xlsx("./fragmentationProfiling四分组.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+clinal_data <- clinal_data[!is.na(clinal_data$分组), ]
+clinal_data <- clinal_data %>% select(SampleID,分组)
+
+
+feature_data <- left_join(clinal_data,feature_data,by = "SampleID")
+feature_data_2 <- feature_data %>% 
+  select(SampleID, F668:F1202)
+
+```
+
+```{r}
+df_transposed <- t(feature_data_2)
+
+df_transposed <- as.data.frame(df_transposed)
+
+df_transposed$SampleID <- rownames(df_transposed)
+
+colnames(df_transposed) <- c("SampleID", colnames(df_transposed)[1:(ncol(df_transposed)-1)])
+
+colnames(df_transposed) <- df_transposed[1, ]
+
+df_transposed <- df_transposed[-1, ]  
+
+colnames(df_transposed)[colnames(df_transposed)=="SampleID"] <- "Feature"
+```
+
+```{r}
+
+feature_name <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/06_Subtype_LWJ/20241115_BC_cfDNA_subtype_v5/Feature_id/feature.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+transposed_feature_name <- t(feature_name)
+transposed_feature_name <- as.data.frame(transposed_feature_name)
+transposed_feature_name <- cbind(RowName = rownames(transposed_feature_name), transposed_feature_name)
+
+# 重置行名
+rownames(transposed_feature_name) <- NULL
+colnames(transposed_feature_name)[colnames(transposed_feature_name)=="1"] <- "Feature"
+```
+
+
+```{r}
+feature_data_3 <- left_join(df_transposed,transposed_feature_name,by ="Feature")
+feature_data_3 <- feature_data_3 %>%
+  separate(RowName, into = c("chr", "start", "end"), sep = "_")
+feature_data_3 <- feature_data_3 %>% 
+  select(Feature, chr, start, end, everything())
+```
+
+```{r}
+features <- setdiff(names(feature_data_3), c("Feature", "chr", "start", "end"))
+
+data_feature_4 <- data.frame()
+
+# 遍历每个特征进行Wilcoxon检验
+for (feature in features) {
+
+    feature_data_MEDIAN <- feature_data_3 %>% 
+      select(Feature, chr, start, end, feature)
+    colnames(feature_data_MEDIAN)[5] <- "feature" 
+    feature_data_MEDIAN <- feature_data_MEDIAN %>%
+      mutate(bin = row_number())
+    feature_data_MEDIAN$bin <- 1:nrow(feature_data_MEDIAN)
+    feature_data_MEDIAN$ID <- feature
+    data_feature_4 <- rbind(data_feature_4, feature_data_MEDIAN)
+}
+data_feature_4$feature <- as.numeric(data_feature_4$feature)
+data_feature_4$z_score <- scale(data_feature_4$feature)
+data_feature_4$log_feature <- log2(data_feature_4$feature)
+
+status <- feature_data %>% 
+  select(SampleID, status)
+  
+colnames(data_feature_4)[colnames(data_feature_4) == "ID"] <- "SampleID"
+data_feature_5 <- left_join(data_feature_4,status,by = "SampleID")
+
+
+chr.labels <- c(chr1 = "chr1", chr2 = "chr2",chr3 = "chr3", chr4 = "chr4",chr5 = "chr5", chr6 = "chr6",chr7 = "chr7", chr8 = "chr8",
+                chr9 = "chr9", chr10 = "chr10",chr11 = "chr11", chr12 = "chr12",chr13 = "chr13", chr14 = "chr14",chr15 = "chr15", 
+                chr16 = "chr16", chr17 = "chr17",chr18 = "chr18", chr19 = "chr19",chr20 = "chr20", chr21 = "chr21",chr22 = "chr22")
+
+data_feature_5$chr <- factor(data_feature_5$chr, 
+                             levels = paste0("chr", c(1:22)))  # 按染色体顺序排列
+
+```
+
+```{r}
+data_feature_4 <- data_feature_4[!is.na(data_feature_4$chr) & data_feature_4$chr != "", ]
+
+
+data_feature_4 <- data_feature_4 %>% 
+  select(-Feature, -bin, -z_score, -log_feature)
+
+sample_groups <- split(data_feature_4, data_feature_4$SampleID)
+
+
+sample_groups <- lapply(sample_groups, function(df) {
+  if ("SampleID" %in% colnames(df)) {
+    df <- df[, !colnames(df) %in% "SampleID"]
+    colnames(df)[colnames(df) == "feature"] <- "log2"
+    colnames(df)[colnames(df) == "chr"] <- "chromosome"
+  }
+  return(df)
+})
+
+
+for (sample_id in names(sample_groups)) {
+  file_name <- paste0("./CNV/",sample_id, ".txt")
+  write.table(sample_groups[[sample_id]], file = file_name, sep = "\t", row.names = FALSE, quote = FALSE)
+}
+
+data_feature_5 <- data_feature_5 %>% filter(!is.na(chr))
+data_feature_5 <- left_join(data_feature_5, clinal_data, by="SampleID")
+
+data_feature_5_Benign <- data_feature_5 %>% filter(分组 == "benign")
+data_feature_5_Stage_I <- data_feature_5 %>% filter(分组 == "Stage I")
+data_feature_5_Stage_II_III <- data_feature_5 %>% filter(分组 == "Stage II-III")
+data_feature_5_Stage_IV <- data_feature_5 %>% filter(分组 == "Stage IV（Metastasis）")
+
+data_feature_5$log_feature <- data_feature_5$log_feature-3.5
+```
+
+
+```{r}
+pdf("20250427_cfDNA_10_fragmentation_Benign.pdf", height=3, width=12)
+ggplot(data_feature_5_Benign, aes(x = bin, y = log_feature, group = SampleID)) +
+    geom_line(size = 0.5, color = "#919AC3", alpha = 0.33) +  # 如果需要透明度gray60 alpha = 0.33
+    labs(x = "",
+         y = "Fragmentation profile\n", color = "") +
+    facet_grid(分组~chr,  ##switch="x",
+               space="free_x", scales="free_x",
+               labeller=labeller(chr=chr.labels),
+               switch="x") +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+          strip.background = element_blank(),
+          strip.placement = "outside",
+          #strip.text.y = element_blank(),
+          axis.text.y = element_text(size = 15),
+          axis.title.y = element_text(size = 15)) +
+
+    scale_y_continuous(breaks=c(-3, 0, 3)) +
+    coord_cartesian(ylim=c(-3, 3))
+dev.off()
+```
+
+```{r}
+pdf("20250427_cfDNA_10_fragmentation_Stage_I.pdf", height=3, width=12)
+ggplot(data_feature_5_Stage_I, aes(x = bin, y = log_feature, group = SampleID)) +
+    geom_line(size = 0.5, color = "#FFC768", alpha = 0.33) +  # 如果需要透明度gray60 alpha = 0.33
+    labs(x = "",
+         y = "Fragmentation profile\n", color = "") +
+    facet_grid(分组~chr,  ##switch="x",
+               space="free_x", scales="free_x",
+               labeller=labeller(chr=chr.labels),
+               switch="x") +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+          strip.background = element_blank(),
+          strip.placement = "outside",
+          #strip.text.y = element_blank(),
+          axis.text.y = element_text(size = 15),
+          axis.title.y = element_text(size = 15)) +
+
+    scale_y_continuous(breaks=c(-3, 0, 3)) +
+    coord_cartesian(ylim=c(-3, 3))
+dev.off()
+```
+
+```{r}
+pdf("20250427_cfDNA_10_fragmentation_Stage_II_III.pdf", height=3, width=12)
+ggplot(data_feature_5_Stage_II_III, aes(x = bin, y = log_feature, group = SampleID)) +
+    geom_line(size = 0.5, color = "#ACCCBF", alpha = 0.33) +  # 如果需要透明度gray60 alpha = 0.33
+    labs(x = "",
+         y = "Fragmentation profile\n", color = "") +
+    facet_grid(分组~chr,  ##switch="x",
+               space="free_x", scales="free_x",
+               labeller=labeller(chr=chr.labels),
+               switch="x") +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+          strip.background = element_blank(),
+          strip.placement = "outside",
+          #strip.text.y = element_blank(),
+          axis.text.y = element_text(size = 15),
+          axis.title.y = element_text(size = 15)) +
+
+    scale_y_continuous(breaks=c(-3, 0, 3)) +
+    coord_cartesian(ylim=c(-3, 3))
+dev.off()
+```
+
+```{r}
+pdf("20250427_cfDNA_10_fragmentation_Stage_IV.pdf", height=3, width=12)
+ggplot(data_feature_5_Stage_IV, aes(x = bin, y = log_feature, group = SampleID)) +
+    geom_line(size = 0.5, color = "#B97F82", alpha = 0.33) +  # 如果需要透明度gray60 alpha = 0.33
+    labs(x = "",
+         y = "Fragmentation profile\n", color = "") +
+    facet_grid(分组~chr,  ##switch="x",
+               space="free_x", scales="free_x",
+               labeller=labeller(chr=chr.labels),
+               switch="x") +
+    theme_classic(base_size = 12) +
+    theme(axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          strip.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+          strip.background = element_blank(),
+          strip.placement = "outside",
+          #strip.text.y = element_blank(),
+          axis.text.y = element_text(size = 15),
+          axis.title.y = element_text(size = 15)) +
+
+    scale_y_continuous(breaks=c(-3, 0, 3)) +
+    coord_cartesian(ylim=c(-3, 3))
+dev.off()
+```

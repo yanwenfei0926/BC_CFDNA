@@ -1,0 +1,306 @@
+---
+title: "Griffin"
+author: "Wei"
+date: '2024-08-02'
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+html_document: default
+---
+
+# 1. loading library and function
+```{r}
+rm(list = ls())
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+
+# 2. loading data
+```{r}
+
+data_feature <- read.xlsx("20240913-all_data_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+
+
+predicted_data1 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data2 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data3 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/03_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data <-bind_rows(predicted_data1, predicted_data2, predicted_data3)
+colnames(predicted_data)[colnames(predicted_data)=="Group"] <- "SampleID"
+colnames(predicted_data)[colnames(predicted_data)=="Predicted.Status"] <- "predicted"
+colnames(predicted_data)[colnames(predicted_data)=="True.Status"] <- "actual"
+colnames(predicted_data)[colnames(predicted_data)=="Malignant.Probability"] <- "predicted_prob"
+
+
+all_data <- left_join(predicted_data, data_feature, by="SampleID")
+
+
+```
+
+
+# 3. data processed
+## 3.1 join
+```{r}
+data_feature_2 <- all_data %>% 
+  dplyr::mutate(Group_predicted = case_when(predicted == "0" ~ "Benign",
+                                         predicted == "1" ~ "Malignant",
+                                  )) %>% 
+  distinct()
+colnames(data_feature_2)[colnames(data_feature_2)=="SampleID"] <- "Sample"
+```
+
+
+# 10. Griffin
+## 10.1 colname
+```{r}
+data_colname <- data.frame(
+  Feature = c("F531", "F532", "F533", "F534", "F535", "F536", "F537", "F538", "F539", "F540",
+              "F541", "F542", "F543", "F544", "F545", "F546", "F547", "F548", "F549", "F550",
+              "F551", "F552", "F553", "F554", "F555", "F556", "F557", "F558", "F559", "F560",
+              "F561", "F562", "F563", "F564", "F565", "F566", "F567", "F568", "F569", "F570",
+              "F571", "F572", "F573", "F574", "F575", "F576", "F577", "F578", "F579", "F580",
+              "F581", "F582", "F583", "F584", "F585", "F586", "F587", "F588", "F589", "F590",
+              "F591", "F592", "F593", "F594", "F595", "F596", "F597", "F598", "F599", "F600",
+              "F601", "F602", "F603", "F604", "F605", "F606", "F607", "F608", "F609", "F610",
+              "F611", "F612", "F613", "F614", "F615", "F616", "F617", "F618", "F619", "F620",
+              "F621", "F622", "F623", "F624", "F625", "F626", "F627", "F628", "F629", "F630",
+              "F631", "F632", "F633", "F634", "F635", "F636", "F637", "F638", "F639", "F640",
+              "F641", "F642", "F643", "F644", "F645", "F646", "F647", "F648", "F649", "F650",
+              "F651", "F652", "F653", "F654", "F655", "F656", "F657", "F658", "F659", "F660",
+              "F661", "F662", "F663", "F664", "F665", "F666", "F667"),
+  Location = c(-990, -975, -960, -945, -930, -915, -900, -885, -870, -855, -840, -825, -810,
+               -795, -780, -765, -750, -735, -720, -705, -690, -675, -660, -645, -630, -615,
+               -600, -585, -570, -555, -540, -525, -510, -495, -480, -465, -450, -435, -420,
+               -405, -390, -375, -360, -345, -330, -315, -300, -285, -270, -255, -240, -225,
+               -210, -195, -180, -165, -150, -135, -120, -105, -90, -75, -60, -45, -30, -15,
+               0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 195, 210, 225, 240,
+               255, 270, 285, 300, 315, 330, 345, 360, 375, 390, 405, 420, 435, 450, 465, 480,
+               495, 510, 525, 540, 555, 570, 585, 600, 615, 630, 645, 660, 675, 690, 705, 720,
+               735, 750, 765, 780, 795, 810, 825, 840, 855, 870, 885, 900, 915, 930, 945, 960,
+               975, "mean_reads_per_bp_in_normalization_window", "mean_reads_per_bp_in_saved_window",
+               "mean_coverage", "central_coverage", "amplitude")
+)
+
+# write.table(data_colname, "data_colname.txt", sep = "\t", row.names = F)
+
+```
+
+## 10.2 data_Griffin
+```{r}
+data_Griffin_Loc <- data_feature_2 %>% 
+  dplyr::select(Group_predicted, F531:F667)
+data_Griffin_Loc2 <- data_Griffin_Loc %>% 
+  rownames_to_column(var = "ID")
+data_Griffin_Loc3 <- as.data.frame(data.table::transpose(data_Griffin_Loc2, keep.names = "ID", make.names = 1))
+# join colname and Feature
+join_Griffin_Loc3_colname <- left_join(data_Griffin_Loc3, data_colname, by = c("ID" = "Feature"))
+# 修改第一行最后一列的值
+join_Griffin_Loc3_colname[1, ncol(join_Griffin_Loc3_colname)] <- "Location"
+# transpose colname and Feature
+join_Griffin_Loc3_colname <- as.data.frame(data.table::transpose(join_Griffin_Loc3_colname, keep.names = "ID", make.names = 1))
+join_Griffin_Loc3_colname2 <- join_Griffin_Loc3_colname %>% 
+  column_to_rownames(var = "ID")
+# 将最后一行的值设置为列名
+colnames(join_Griffin_Loc3_colname2) <- as.character(join_Griffin_Loc3_colname2[nrow(join_Griffin_Loc3_colname2), ])
+# 删除最后一行
+join_Griffin_Loc3_colname2 <- join_Griffin_Loc3_colname2[-nrow(join_Griffin_Loc3_colname2), ]
+```
+
+## 10.3 plot geom_ribbon
+```{r}
+# 转换数据框结构
+data_long <- pivot_longer(join_Griffin_Loc3_colname2, cols = `-990`:`975`, names_to = "Position", values_to = "Value")
+
+data_long$Position <- as.numeric(gsub("X", "", data_long$Position))
+data_long$Value <- as.numeric(gsub("X", "", data_long$Value))
+
+# 计算每个位置的均值和标准误
+summary_data <- data_long %>% 
+  group_by(Position, Location) %>%
+  summarise(Mean = mean(Value), SD = sd(Value), Count = n()) %>%
+  mutate(SE = SD / sqrt(Count), Lower = Mean - 1.96 * SE, Upper = Mean + 1.96 * SE)
+
+# 绘制图形
+pdf("20241125_cfDNA_05_Griffin_geom_ribbon_v1.pdf", height=6, width=18)
+ggplot(summary_data, aes(x = Position, y = Mean, group = Location, color = Location)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = Lower, ymax = Upper, fill = Location), alpha = 0.4) +
+  scale_color_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  labs(x = "Distance", 
+       y = "Normalized Coverage", 
+       title = "") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), 
+        axis.title = element_text(size = 15),
+        strip.text = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+
+
+# 11. mean_coverage
+```{r}
+join_Griffin_Loc3_colname2$mean_coverage <- as.numeric(join_Griffin_Loc3_colname2$mean_coverage)
+
+summary(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$mean_coverage)
+summary(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Malignant",]$mean_coverage)
+p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$mean_coverage, join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Malignant",]$mean_coverage)
+p$p.value
+
+join_mean_coverage <- data.frame(join_Griffin_Loc3_colname2) %>%
+  select(Location, mean_coverage)
+
+join_mean_coverage$Location=factor(join_mean_coverage$Location, levels=c('Benign', 'Malignant'))
+
+pdf("20241125_cfDNA_06_mean_coverage_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(join_mean_coverage, aes(x = Location, y = mean_coverage, fill = factor(Location), color = factor(Location))) +
+  # geom_boxplot(width = 0.3, size = 1) +
+  geom_violin(width = 0.45, linewidth = 1) +
+  geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom") +
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1))) +
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 6,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  annotate("text", x = 1.39, y = median(join_mean_coverage[join_mean_coverage$Location == "Benign", ]$mean_coverage), label = sprintf("%0.3f", median(join_mean_coverage[join_mean_coverage$Location == "Benign", ]$mean_coverage)), color = "#000000", size = 6) +
+  annotate("text", x = 2.38, y = median(join_mean_coverage[join_mean_coverage$Location == "Malignant", ]$mean_coverage), label = sprintf("%0.3f", median(join_mean_coverage[join_mean_coverage$Location == "Malignant", ]$mean_coverage)), color = "#000000", size = 6) +
+  theme_classic() +
+  theme(legend.position = "NA") +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  scale_color_manual(values = c("#7897BE", "#BD7D76")) +
+  labs(x = "", y = "Mean Coverage", title = "", fill = "") +
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+
+
+# 12. central_coverage
+```{r}
+join_Griffin_Loc3_colname2$central_coverage <- as.numeric(join_Griffin_Loc3_colname2$central_coverage)
+
+summary(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$central_coverage)
+summary(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Malignant",]$central_coverage)
+# p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$predicted_prob,join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Low",]$predicted_prob)
+# p$p.value
+# p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$predicted_prob,join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Mid",]$predicted_prob)
+# p$p.value
+p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$central_coverage, join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Malignant",]$central_coverage)
+p$p.value
+
+boxplot_central_coverage <- data.frame(join_Griffin_Loc3_colname2) %>%
+  select(Location, central_coverage)
+
+boxplot_central_coverage$Location=factor(boxplot_central_coverage$Location, levels=c('Benign', 'Malignant'))
+
+pdf("20241125_cfDNA_07_central_coverage_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(boxplot_central_coverage, aes(x = Location, y = central_coverage, fill = factor(Location), color = factor(Location))) +
+  # geom_boxplot(width = 0.3, size = 1) +
+  geom_violin(width = 0.45, linewidth = 1) +
+  geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom") +
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1))) +
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 6,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  annotate("text", x = 1.38, y = median(boxplot_central_coverage[boxplot_central_coverage$Location == "Benign", ]$central_coverage), label = sprintf("%0.3f", median(boxplot_central_coverage[boxplot_central_coverage$Location == "Benign", ]$central_coverage)), color = "#000000", size = 6) +
+  annotate("text", x = 2.38, y = median(boxplot_central_coverage[boxplot_central_coverage$Location == "Malignant", ]$central_coverage), label = sprintf("%0.3f", median(boxplot_central_coverage[boxplot_central_coverage$Location == "Malignant", ]$central_coverage)), color = "#000000", size = 6) +
+  theme_classic() +
+  theme(legend.position = "NA") +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  scale_color_manual(values = c("#7897BE", "#BD7D76")) +
+  labs(x = "", y = "Central Coverage", title = "", fill = "") +
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+
+
+# 13. amplitude
+```{r}
+join_Griffin_Loc3_colname2$amplitude <- as.numeric(join_Griffin_Loc3_colname2$amplitude)
+
+summary(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$boxplot_amplitude)
+summary(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Malignant",]$boxplot_amplitude)
+# p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$predicted_prob,join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Low",]$predicted_prob)
+# p$p.value
+# p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$predicted_prob,join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Mid",]$predicted_prob)
+# p$p.value
+p <- wilcox.test(join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Benign",]$amplitude, join_Griffin_Loc3_colname2[join_Griffin_Loc3_colname2$Location=="Malignant",]$amplitude)
+p$p.value
+
+boxplot_amplitude <- data.frame(join_Griffin_Loc3_colname2) %>%
+  select(Location, amplitude)
+
+boxplot_amplitude$Location=factor(boxplot_amplitude$Location, levels=c('Benign', 'Malignant'))
+
+pdf("20241125_cfDNA_08_amplitude_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(boxplot_amplitude, aes(x = Location, y = amplitude, fill = factor(Location), color = factor(Location))) +
+  # geom_boxplot(width = 0.3, size = 1) +
+  geom_violin(width = 0.45, linewidth = 1) +
+  geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom") +
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1))) +
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 6,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  annotate("text", x = 1.43, y = median(boxplot_amplitude[boxplot_amplitude$Location == "Benign", ]$amplitude), label = sprintf("%0.3f", median(boxplot_amplitude[boxplot_amplitude$Location == "Benign", ]$amplitude)), color = "#000000", size = 6) +
+  annotate("text", x = 2.43, y = median(boxplot_amplitude[boxplot_amplitude$Location == "Malignant", ]$amplitude), label = sprintf("%0.3f", median(boxplot_amplitude[boxplot_amplitude$Location == "Malignant", ]$amplitude)), color = "#000000", size = 6) +
+  theme_classic() +
+  theme(legend.position = "NA") +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  scale_color_manual(values = c("#7897BE", "#BD7D76")) +
+  labs(x = "", y = "Amplitude", title = "", fill = "") +
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+

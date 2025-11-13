@@ -1,0 +1,263 @@
+---
+html_document: default
+author: "Wei"
+date: '2024-08-01'
+output:
+  html_document:
+    df_print: paged
+title: "LIQUORICE"
+---
+
+# 1. loading library and function
+```{r}
+rm(list = ls())
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+# 2. loading data
+```{r}
+data_feature <- read.xlsx("20240913-all_data_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+
+predicted_data1 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data2 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data3 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/03_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data <-bind_rows(predicted_data1, predicted_data2, predicted_data3)
+colnames(predicted_data)[colnames(predicted_data)=="Group"] <- "SampleID"
+colnames(predicted_data)[colnames(predicted_data)=="Predicted.Status"] <- "predicted"
+colnames(predicted_data)[colnames(predicted_data)=="True.Status"] <- "actual"
+colnames(predicted_data)[colnames(predicted_data)=="Malignant.Probability"] <- "predicted_prob"
+
+all_data <- left_join(predicted_data, data_feature, by="SampleID")
+```
+
+# 3. data processed
+## 3.1 join
+```{r}
+
+data_feature_2 <- all_data %>% 
+  dplyr::mutate(status_group = case_when(predicted == "0" ~ "Benign",
+                                         predicted == "1" ~ "Malignant",
+                                  )) %>% 
+  distinct()
+colnames(data_feature_2)[colnames(data_feature_2)=="SampleID"] <- "Sample"
+```
+
+
+# 10. LIQUORICE
+```{r}
+# join_data_feature %>%
+#   group_by(OS_time) %>%
+#   summarise(count = n())
+
+data_LIQUORICE <- data_feature_2 %>% 
+  dplyr::select(predicted, predicted_prob, actual, Sample, status_group,F1:F3) 
+
+data_LIQUORICE_Dip <- data_LIQUORICE %>% 
+  dplyr::select(predicted, predicted_prob, actual, Sample, status_group,F1)
+
+data_LIQUORICE_Intercept <- data_LIQUORICE %>% 
+  dplyr::select(predicted, predicted_prob, actual, Sample, status_group,F2)
+
+data_LIQUORICE_AOC <- data_LIQUORICE %>% 
+  dplyr::select(predicted, predicted_prob, actual, Sample, status_group,F3)
+
+```
+
+
+# 11. Total dip depth
+```{r}
+summary(data_LIQUORICE_Dip[data_LIQUORICE_Dip$status_group=="Benign",]$F1)
+summary(data_LIQUORICE_Dip[data_LIQUORICE_Dip$status_group=="Malignant",]$F1)
+# p <- wilcox.test(data_LIQUORICE_Dip[data_LIQUORICE_Dip$Group_predicted=="Benign",]$predicted_prob,data_LIQUORICE_Dip[data_LIQUORICE_Dip$Group_predicted=="Low",]$predicted_prob)
+# p$p.value
+
+p <- wilcox.test(data_LIQUORICE_Dip[data_LIQUORICE_Dip$status_group=="Benign",]$F1, data_LIQUORICE_Dip[data_LIQUORICE_Dip$status_group=="Malignant",]$F1)
+p$p.value
+
+boxplot_LIQUORICE_Dip <- data.frame(data_LIQUORICE_Dip) %>%
+  select(status_group, F1)
+
+boxplot_LIQUORICE_Dip$status_group=factor(boxplot_LIQUORICE_Dip$status_group, levels=c('Benign', 'Malignant'))
+
+pdf("20241125_cfDNA_01_Total_dip_depth_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(boxplot_LIQUORICE_Dip, aes(x = status_group, y = F1, fill = factor(status_group), color = factor(status_group))) +
+  # geom_boxplot(width = 0.3, size = 1) +
+  geom_violin(width = 0.45, linewidth = 1) +
+  geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom") +
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1))) +
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 6,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  annotate("text", x = 1.38, y = median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Benign", ]$F1), label = sprintf("%0.3f", median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Benign", ]$F1)), color = "#000000", size = 6) +
+  annotate("text", x = 2.41, y = median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Malignant", ]$F1), label = sprintf("%0.3f", median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Malignant", ]$F1)), color = "#000000", size = 6) +
+  theme_classic() +
+  theme(legend.position = "NA") +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  scale_color_manual(values = c("#7897BE", "#BD7D76")) +
+  labs(x = "", y = "Total dip depth", title = "", fill = "") +
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+
+
+# 12. Intercept
+```{r}
+summary(data_LIQUORICE_Intercept[data_LIQUORICE_Intercept$status_group=="Benign",]$F2)
+summary(data_LIQUORICE_Intercept[data_LIQUORICE_Intercept$status_group=="Malignant",]$F2)
+# p <- wilcox.test(data_LIQUORICE_Intercept[data_LIQUORICE_Intercept$Group_predicted=="Benign",]$predicted_prob,data_LIQUORICE_Intercept[data_LIQUORICE_Intercept$Group_predicted=="Low",]$predicted_prob)
+# p$p.value
+p <- wilcox.test(data_LIQUORICE_Intercept[data_LIQUORICE_Intercept$status_group=="Benign",]$F2,data_LIQUORICE_Intercept[data_LIQUORICE_Intercept$status_group=="Malignant",]$F2)
+p$p.value
+
+
+boxplot_LIQUORICE_Dip <- data.frame(data_LIQUORICE_Intercept) %>%
+  select(status_group, F2)
+
+boxplot_LIQUORICE_Dip$status_group=factor(boxplot_LIQUORICE_Dip$status_group, levels=c('Benign', 'Malignant'))
+
+pdf("20241125_cfDNA_02_Intercept_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(boxplot_LIQUORICE_Dip, aes(x = status_group, y = F2, fill = factor(status_group), color = factor(status_group))) +
+  # geom_boxplot(width = 0.3, size = 1) +
+  geom_violin(width = 0.45, linewidth = 1) +
+  geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom") +
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1))) +
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 6,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  annotate("text", x = 1.41, y = median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Benign", ]$F2), label = sprintf("%0.3f", median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Benign", ]$F2)), color = "#000000", size = 6) +
+  annotate("text", x = 2.43, y = median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Malignant", ]$F2), label = sprintf("%0.3f", median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$Group_predicted == "Malignant", ]$F2)), color = "#000000", size = 6) +
+  theme_classic() +
+  theme(legend.position = "NA") +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  scale_color_manual(values = c("#7897BE", "#BD7D76")) +
+  labs(x = "", y = "Intercept", title = "", fill = "") +
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+
+
+# 13. AOC
+```{r}
+summary(data_LIQUORICE_AOC[data_LIQUORICE_AOC$status_group=="Benign",]$F3)
+summary(data_LIQUORICE_AOC[data_LIQUORICE_AOC$status_group=="Malignant",]$F3)
+# p <- wilcox.test(data_LIQUORICE_AOC[data_LIQUORICE_AOC$Group_predicted=="Benign",]$predicted_prob,data_LIQUORICE_AOC[data_LIQUORICE_AOC$Group_predicted=="Low",]$predicted_prob)
+# p$p.value
+# p <- wilcox.test(data_LIQUORICE_AOC[data_LIQUORICE_AOC$Group_predicted=="Benign",]$predicted_prob,data_LIQUORICE_AOC[data_LIQUORICE_AOC$Group_predicted=="Mid",]$predicted_prob)
+# p$p.value
+p <- wilcox.test(data_LIQUORICE_AOC[data_LIQUORICE_AOC$status_group=="Benign",]$F3, data_LIQUORICE_AOC[data_LIQUORICE_AOC$status_group=="Malignant",]$F3)
+p$p.value
+
+boxplot_LIQUORICE_Dip <- data.frame(data_LIQUORICE_AOC) %>%
+  select(status_group, F3)
+
+boxplot_LIQUORICE_Dip$status_group=factor(boxplot_LIQUORICE_Dip$status_group, levels=c('Benign', 'Malignant'))
+
+pdf("20241125_cfDNA_03_AOC_boxplot_v1.pdf", height=5.5, width=5.5)
+ggplot(boxplot_LIQUORICE_Dip, aes(x = status_group, y = F3, fill = factor(status_group), color = factor(status_group))) +
+  # geom_boxplot(width = 0.3, size = 1) +
+  geom_violin(width = 0.45, linewidth = 1) +
+  geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom") +
+  scale_y_continuous(expand = ggplot2::expansion(mult = c(0.1, 0.1))) +
+  geom_signif(comparisons = list(c("Benign", "Malignant")),
+              map_signif_level = T,
+              textsize = 6,
+              test = "wilcox.test",
+              step_increase = 0.1,
+              color = "#000000")+
+  # annotate("text", x = 1.48, y = median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$status_group == "Benign", ]$F3), label = sprintf("%0.3f", median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$status_group == "Benign", ]$F3)), color = "#000000", size = 6) +
+  # annotate("text", x = 2.50, y = median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$status_group == "Malignant", ]$F3), label = sprintf("%0.3f", median(boxplot_LIQUORICE_Dip[boxplot_LIQUORICE_Dip$status_group == "Malignant", ]$F3)), color = "#000000", size = 6) +
+  theme_classic() +
+  theme(legend.position = "NA") +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF")) +
+  scale_color_manual(values = c("#7897BE", "#BD7D76")) +
+  labs(x = "", y = "Area over the curve (AOC)", title = "", fill = "") +
+  theme(panel.grid = element_blank(), axis.title = element_text(size = 15)) +
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+```
+
+
+# 14. stat_density_2d (Density)
+```{r}
+data_Density <- data_feature_2 %>% 
+  dplyr::select(status_group, F1:F3)
+# write.table(data_Density, "data_Density.txt", sep = "\t", row.names = F)
+
+data_Density$F3_normalized <- with(data_Density, F3 / sum(F3))
+
+# Create the density plot
+pdf("20241125_cfDNA_04_AOC_stat_density_2d_v1.pdf", height=5.5, width=11)
+ggplot(data_Density, aes(x = F2, y = F1, fill = F3_normalized, group = status_group)) + 
+  # geom_point(color = "#9e9ee2") +
+  stat_density_2d(geom = "polygon", 
+                  contour = TRUE,
+                  linewidth = 0.5,
+                  aes(fill = after_stat(level)), 
+                  colour = "#000000",
+                  bins = 15)+
+  scale_fill_distiller(palette = "Purples", 
+                       direction = 1,
+                       guide = guide_colourbar(title = "AOC",
+                                               title.position = "top")) +
+  facet_wrap(~ status_group)+
+  labs(title = "Area Over the Curve (AOC)",
+       x = "Intercept",
+       y = "Total dip depth",
+       fill = "Density Level") +
+  theme_minimal()+
+  theme(panel.grid = element_blank(), 
+        axis.title = element_text(size = 15),
+        strip.text = element_text(size = 15)) + # face = "bold"
+  theme(plot.title = element_text(face = "bold", color = "black", size = 15, hjust = 0.5)) +
+  theme(axis.line = element_line(linewidth = 0.5, colour = "black")) +
+  theme(axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  theme(axis.text.x = element_text(face = "bold", color = "black", size = 15),
+        axis.text.y = element_text(face = "bold", color = "black", size = 15),
+        axis.title.x = element_text(face = "bold", color = "black", size = 15),
+        axis.title.y = element_text(face = "bold", color = "black", size = 15))
+dev.off()
+
+
+```

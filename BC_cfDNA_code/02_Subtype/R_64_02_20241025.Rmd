@@ -1,0 +1,192 @@
+---
+html_document: default
+author: "Jia"
+date: '2024-09-26'
+output:
+pdf_document: default
+title: "receiver operating characteristic curve (ROC curve)_training dataset"
+---
+
+```{r}
+rm(list=ls())
+```
+
+# 1. loading library and function
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+
+# 2. loading data
+```{r}
+Model_01_ERPR <- read.xlsx("./ERPR/ERPR_LASSO_02_GLM/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_01_ERPR)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_02_HER2 <- read.xlsx("./HER2/HER2_LASSO_02_GLM/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_02_HER2)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_03_TNBC <- read.xlsx("./TNBC/TNBC_LASSO_02_GLM/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_03_TNBC)<-c("Sample", "actual", "predicted", "predicted_prob")
+```
+
+# 3. data processed
+
+## 3.2 Model_02_GLM calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_01_ERPR$predicted <- factor(Model_01_ERPR$predicted, levels = c(0, 1))
+Model_01_ERPR$actual <- factor(Model_01_ERPR$actual, levels = c(1, 0))
+
+Model_01_ERPR_roc <- roc(Model_01_ERPR$actual, Model_01_ERPR$predicted_prob)
+Model_01_ERPR_auc <- auc(Model_01_ERPR_roc)
+Model_01_ERPR_ci_value <- ci.auc(Model_01_ERPR_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_01_ERPR_auc, 3)))
+print(paste("95% CI:", round(Model_01_ERPR_ci_value[1], 3), "-", round(Model_01_ERPR_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_02_HER2$predicted <- factor(Model_02_HER2$predicted, levels = c(0, 1))
+Model_02_HER2$actual <- factor(Model_02_HER2$actual, levels = c(1, 0))
+
+Model_02_HER2_roc <- roc(Model_02_HER2$actual, Model_02_HER2$predicted_prob)
+Model_02_HER2_auc <- auc(Model_02_HER2_roc)
+Model_02_HER2_ci_value <- ci.auc(Model_02_HER2_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_02_HER2_auc, 3)))
+print(paste("95% CI:", round(Model_02_HER2_ci_value[1], 3), "-", round(Model_02_HER2_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_03_TNBC$predicted <- factor(Model_03_TNBC$predicted, levels = c(0, 1))
+Model_03_TNBC$actual <- factor(Model_03_TNBC$actual, levels = c(1, 0))
+
+Model_03_TNBC_roc <- roc(Model_03_TNBC$actual, Model_03_TNBC$predicted_prob)
+Model_03_TNBC_auc <- auc(Model_03_TNBC_roc)
+Model_03_TNBC_ci_value <- ci.auc(Model_03_TNBC_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_03_TNBC_auc, 3)))
+print(paste("95% CI:", round(Model_03_TNBC_ci_value[1], 3), "-", round(Model_03_TNBC_ci_value[3], 3)))
+
+```
+
+# 4. ROC
+## 4.1 prediction and performance
+```{r}
+# Model_01_ERPR
+pred_Model_01_ERPR <- prediction(Model_01_ERPR$predicted_prob, Model_01_ERPR$actual)
+perf_auc_Model_01_ERPR <- performance(pred_Model_01_ERPR, "auc")
+auc_Model_01_ERPR <- as.numeric(performance(pred_Model_01_ERPR, "auc")@y.values)
+perf_roc_Model_01_ERPR <- performance(pred_Model_01_ERPR, measure = "tpr", x.measure = "fpr")
+
+# Model_02_HER2
+pred_Model_02_HER2 <- prediction(Model_02_HER2$predicted_prob, Model_02_HER2$actual)
+perf_auc_Model_02_HER2 <- performance(pred_Model_02_HER2, "auc")
+auc_Model_02_HER2 <- as.numeric(performance(pred_Model_02_HER2, "auc")@y.values)
+perf_roc_Model_02_HER2 <- performance(pred_Model_02_HER2, measure = "tpr", x.measure = "fpr")
+
+# Model_03_TNBC
+pred_Model_03_TNBC <- prediction(Model_03_TNBC$predicted_prob, Model_03_TNBC$actual)
+perf_auc_Model_03_TNBC <- performance(pred_Model_03_TNBC, "auc")
+auc_Model_03_TNBC <- as.numeric(performance(pred_Model_03_TNBC, "auc")@y.values)
+perf_roc_Model_03_TNBC <- performance(pred_Model_03_TNBC, measure = "tpr", x.measure = "fpr")
+
+```
+
+## 4.2 plot1
+```{r}
+# 创建数据框并添加标识列
+
+df1 <- tibble(x = perf_roc_Model_01_ERPR@x.values[[1]], y = perf_roc_Model_01_ERPR@y.values[[1]], dataset = "ERPR")
+
+df2 <- tibble(x = perf_roc_Model_02_HER2@x.values[[1]], y = perf_roc_Model_02_HER2@y.values[[1]], dataset = "HER2")
+
+df3 <- tibble(x = perf_roc_Model_03_TNBC@x.values[[1]], y = perf_roc_Model_03_TNBC@y.values[[1]], dataset = "TNBC")
+
+
+combined_df <- bind_rows(df1, df2, df3)
+
+combined_df$dataset=factor(combined_df$dataset, levels=c('ERPR', 'HER2', 'TNBC'))
+
+
+
+```
+
+## 4.3 plot2
+```{r}
+pdf('20241115_02_External_validation_Dataset_ROC_v2.pdf', width = 8, height = 6)
+
+ggplot(combined_df, aes(x = x, y = y, color = dataset)) + 
+  geom_line(linetype = "solid", linewidth = 1) +
+  theme_bw() +
+  labs(color="Models", x="False Positive Rate", y="True Positive Rate", fill = "CV", title = "") + 
+  theme(legend.position = "NA",
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold")) +
+  scale_color_manual(values = c('#99B167', '#939CC7', '#EE852C')) +
+
+  geom_segment(aes(x = 0.37, y = 0.175, xend = 0.33, yend = 0.175), color = "#99B167", size = 1) +
+  geom_text(aes(x = 0.38, y = 0.16, 
+                label = paste0("ER+/PR+HER2-, ", 
+                               round(Model_01_ERPR_auc, 3),
+                               " (",
+                               round(Model_01_ERPR_ci_value[1], 3),
+                               "-",
+                               round(Model_01_ERPR_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+
+  # SVM 文本和颜色线
+  geom_segment(aes(x = 0.37, y = 0.095, xend = 0.33, yend = 0.095), color = "#939CC7", size = 1) +
+  geom_text(aes(x = 0.38, y = 0.08, 
+                label = paste0("HER2+, ", 
+                               round(Model_02_HER2_auc, 3),
+                               " (",
+                               round(Model_02_HER2_ci_value[1], 3),
+                               "-",
+                               round(Model_02_HER2_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+  # Stacked ensemble 文本和颜色线
+  geom_segment(aes(x = 0.37, y = 0.015, xend = 0.33, yend = 0.015), color = "#EE852C", size = 1) +
+  geom_text(aes(x = 0.38, y = 0, 
+                label = paste0("TNBC, ", 
+                               round(Model_03_TNBC_auc, 3),
+                               " (",
+                               round(Model_03_TNBC_ci_value[1], 3),
+                               "-",
+                               round(Model_03_TNBC_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+  
+  geom_text(aes(x=0.33, y=0.24, 
+                label=paste0("Models, AUC (95% CI)")), 
+            hjust="left", vjust="bottom", size=6, color="black")+
+  theme(axis.text.x = element_text(color = "black", size = 20),
+        axis.text.y = element_text(color = "black", size = 20),
+        axis.title.x = element_text(color = "black", size = 20),
+        axis.title.y = element_text(color = "black", size = 20))
+
+
+dev.off()
+
+```
+

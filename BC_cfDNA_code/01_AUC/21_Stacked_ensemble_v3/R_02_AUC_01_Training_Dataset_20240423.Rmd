@@ -1,0 +1,710 @@
+---
+html_document: default
+author: "Wei"
+date: '2024-04-23'
+output:
+pdf_document: default
+title: "receiver operating characteristic curve (ROC curve)"
+---
+
+```{r}
+rm(list=ls())
+```
+
+# 1. loading library and function
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+# 2. loading data
+```{r}
+cv1 <- read.xlsx("fold_1.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv1)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv2 <- read.xlsx("fold_2.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv2)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv3 <- read.xlsx("fold_3.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv3)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv4 <- read.xlsx("fold_4.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv4)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv5 <- read.xlsx("fold_5.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv5)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv6 <- read.xlsx("fold_6.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv6)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv7 <- read.xlsx("fold_7.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv7)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv8 <- read.xlsx("fold_8.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv8)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv9 <- read.xlsx("fold_9.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv9)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+cv10 <- read.xlsx("fold_10.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(cv10)<-c("predicted", "predicted_prob", "actual", "Sample")
+
+Model_20_DLA <- bind_rows(cv1, cv2, cv3, cv4, cv5, cv6, cv7, cv8, cv9, cv10)
+
+```
+
+# 3. data processed
+## 3.1 cv1 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv1$predicted <- factor(cv1$predicted, levels = c(0, 1))
+cv1$actual <- factor(cv1$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv1_conf_matrix <- confusionMatrix(cv1$predicted, cv1$actual)
+
+# 计算准确率
+cv1_accuracy <- cv1_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv1_auc <- roc(cv1$actual, cv1$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv1_ppv <- cv1_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv1_npv <- cv1_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv1_sensitivity <- cv1_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv1_specificity <- cv1_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv1_count <- table(cv1$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv1_accuracy, 3)))
+print(paste("AUC:", round(cv1_auc, 3)))
+print(paste("PPV:", round(cv1_ppv, 3)))
+print(paste("NPV:", round(cv1_npv, 3)))
+print(paste("Sensitivity:", round(cv1_sensitivity, 3)))
+print(paste("Specificity:", round(cv1_specificity, 3)))
+print(paste("Benign:", cv1_count[1]))
+print(paste("Malignant:", cv1_count[2]))
+
+```
+
+## 3.2 cv2 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv2$predicted <- factor(cv2$predicted, levels = c(0, 1))
+cv2$actual <- factor(cv2$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv2_conf_matrix <- confusionMatrix(cv2$predicted, cv2$actual)
+
+# 计算准确率
+cv2_accuracy <- cv2_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv2_auc <- roc(cv2$actual, cv2$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv2_ppv <- cv2_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv2_npv <- cv2_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv2_sensitivity <- cv2_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv2_specificity <- cv2_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv2_count <- table(cv2$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv2_accuracy, 3)))
+print(paste("AUC:", round(cv2_auc, 3)))
+print(paste("PPV:", round(cv2_ppv, 3)))
+print(paste("NPV:", round(cv2_npv, 3)))
+print(paste("Sensitivity:", round(cv2_sensitivity, 3)))
+print(paste("Specificity:", round(cv2_specificity, 3)))
+print(paste("Benign:", cv2_count[1]))
+print(paste("Malignant:", cv2_count[2]))
+
+```
+
+## 3.3 cv3 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv3$predicted <- factor(cv3$predicted, levels = c(0, 1))
+cv3$actual <- factor(cv3$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv3_conf_matrix <- confusionMatrix(cv3$predicted, cv3$actual)
+
+# 计算准确率
+cv3_accuracy <- cv3_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv3_auc <- roc(cv3$actual, cv3$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv3_ppv <- cv3_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv3_npv <- cv3_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv3_sensitivity <- cv3_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv3_specificity <- cv3_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv3_count <- table(cv3$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv3_accuracy, 3)))
+print(paste("AUC:", round(cv3_auc, 3)))
+print(paste("PPV:", round(cv3_ppv, 3)))
+print(paste("NPV:", round(cv3_npv, 3)))
+print(paste("Sensitivity:", round(cv3_sensitivity, 3)))
+print(paste("Specificity:", round(cv3_specificity, 3)))
+print(paste("Benign:", cv3_count[1]))
+print(paste("Malignant:", cv3_count[2]))
+
+```
+## 3.4 cv4 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv4$predicted <- factor(cv4$predicted, levels = c(0, 1))
+cv4$actual <- factor(cv4$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv4_conf_matrix <- confusionMatrix(cv4$predicted, cv4$actual)
+
+# 计算准确率
+cv4_accuracy <- cv4_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv4_auc <- roc(cv4$actual, cv4$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv4_ppv <- cv4_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv4_npv <- cv4_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv4_sensitivity <- cv4_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv4_specificity <- cv4_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv4_count <- table(cv4$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv4_accuracy, 3)))
+print(paste("AUC:", round(cv4_auc, 3)))
+print(paste("PPV:", round(cv4_ppv, 3)))
+print(paste("NPV:", round(cv4_npv, 3)))
+print(paste("Sensitivity:", round(cv4_sensitivity, 3)))
+print(paste("Specificity:", round(cv4_specificity, 3)))
+print(paste("Benign:", cv4_count[1]))
+print(paste("Malignant:", cv4_count[2]))
+
+```
+## 3.5 cv5 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv5$predicted <- factor(cv5$predicted, levels = c(0, 1))
+cv5$actual <- factor(cv5$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv5_conf_matrix <- confusionMatrix(cv5$predicted, cv5$actual)
+
+# 计算准确率
+cv5_accuracy <- cv5_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv5_auc <- roc(cv5$actual, cv5$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv5_ppv <- cv5_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv5_npv <- cv5_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv5_sensitivity <- cv5_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv5_specificity <- cv5_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv5_count <- table(cv5$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv5_accuracy, 3)))
+print(paste("AUC:", round(cv5_auc, 3)))
+print(paste("PPV:", round(cv5_ppv, 3)))
+print(paste("NPV:", round(cv5_npv, 3)))
+print(paste("Sensitivity:", round(cv5_sensitivity, 3)))
+print(paste("Specificity:", round(cv5_specificity, 3)))
+print(paste("Benign:", cv5_count[1]))
+print(paste("Malignant:", cv5_count[2]))
+
+```
+
+## 3.6 cv6 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv6$predicted <- factor(cv6$predicted, levels = c(0, 1))
+cv6$actual <- factor(cv6$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv6_conf_matrix <- confusionMatrix(cv6$predicted, cv6$actual)
+
+# 计算准确率
+cv6_accuracy <- cv6_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv6_auc <- roc(cv6$actual, cv6$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv6_ppv <- cv6_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv6_npv <- cv6_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv6_sensitivity <- cv6_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv6_specificity <- cv6_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv6_count <- table(cv6$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv6_accuracy, 3)))
+print(paste("AUC:", round(cv6_auc, 3)))
+print(paste("PPV:", round(cv6_ppv, 3)))
+print(paste("NPV:", round(cv6_npv, 3)))
+print(paste("Sensitivity:", round(cv6_sensitivity, 3)))
+print(paste("Specificity:", round(cv6_specificity, 3)))
+print(paste("Benign:", cv6_count[1]))
+print(paste("Malignant:", cv6_count[2]))
+
+```
+## 3.7 cv7 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv7$predicted <- factor(cv7$predicted, levels = c(0, 1))
+cv7$actual <- factor(cv7$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv7_conf_matrix <- confusionMatrix(cv7$predicted, cv7$actual)
+
+# 计算准确率
+cv7_accuracy <- cv7_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv7_auc <- roc(cv7$actual, cv7$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv7_ppv <- cv7_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv7_npv <- cv7_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv7_sensitivity <- cv7_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv7_specificity <- cv7_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv7_count <- table(cv7$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv7_accuracy, 3)))
+print(paste("AUC:", round(cv7_auc, 3)))
+print(paste("PPV:", round(cv7_ppv, 3)))
+print(paste("NPV:", round(cv7_npv, 3)))
+print(paste("Sensitivity:", round(cv7_sensitivity, 3)))
+print(paste("Specificity:", round(cv7_specificity, 3)))
+print(paste("Benign:", cv7_count[1]))
+print(paste("Malignant:", cv7_count[2]))
+
+```
+## 3.8 cv8 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv8$predicted <- factor(cv8$predicted, levels = c(0, 1))
+cv8$actual <- factor(cv8$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv8_conf_matrix <- confusionMatrix(cv8$predicted, cv8$actual)
+
+# 计算准确率
+cv8_accuracy <- cv8_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv8_auc <- roc(cv8$actual, cv8$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv8_ppv <- cv8_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv8_npv <- cv8_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv8_sensitivity <- cv8_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv8_specificity <- cv8_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv8_count <- table(cv8$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv8_accuracy, 3)))
+print(paste("AUC:", round(cv8_auc, 3)))
+print(paste("PPV:", round(cv8_ppv, 3)))
+print(paste("NPV:", round(cv8_npv, 3)))
+print(paste("Sensitivity:", round(cv8_sensitivity, 3)))
+print(paste("Specificity:", round(cv8_specificity, 3)))
+print(paste("Benign:", cv8_count[1]))
+print(paste("Malignant:", cv8_count[2]))
+
+```
+## 3.9 cv9 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv9$predicted <- factor(cv9$predicted, levels = c(0, 1))
+cv9$actual <- factor(cv9$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv9_conf_matrix <- confusionMatrix(cv9$predicted, cv9$actual)
+
+# 计算准确率
+cv9_accuracy <- cv9_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv9_auc <- roc(cv9$actual, cv9$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv9_ppv <- cv9_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv9_npv <- cv9_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv9_sensitivity <- cv9_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv9_specificity <- cv9_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv9_count <- table(cv9$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv9_accuracy, 3)))
+print(paste("AUC:", round(cv9_auc, 3)))
+print(paste("PPV:", round(cv9_ppv, 3)))
+print(paste("NPV:", round(cv9_npv, 3)))
+print(paste("Sensitivity:", round(cv9_sensitivity, 3)))
+print(paste("Specificity:", round(cv9_specificity, 3)))
+print(paste("Benign:", cv9_count[1]))
+print(paste("Malignant:", cv9_count[2]))
+
+```
+
+## 3.10 cv10 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+cv10$predicted <- factor(cv10$predicted, levels = c(0, 1))
+cv10$actual <- factor(cv10$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+cv10_conf_matrix <- confusionMatrix(cv10$predicted, cv10$actual)
+
+# 计算准确率
+cv10_accuracy <- cv10_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+cv10_auc <- roc(cv10$actual, cv10$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+cv10_ppv <- cv10_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+cv10_npv <- cv10_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+cv10_sensitivity <- cv10_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+cv10_specificity <- cv10_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+cv10_count <- table(cv10$actual)
+
+# 打印结果
+print(paste("Accuracy:", round(cv10_accuracy, 3)))
+print(paste("AUC:", round(cv10_auc, 3)))
+print(paste("PPV:", round(cv10_ppv, 3)))
+print(paste("NPV:", round(cv10_npv, 3)))
+print(paste("Sensitivity:", round(cv10_sensitivity, 3)))
+print(paste("Specificity:", round(cv10_specificity, 3)))
+print(paste("Benign:", cv10_count[1]))
+print(paste("Malignant:", cv10_count[2]))
+
+```
+
+```{r}
+Model_20_DLA$predicted <- factor(Model_20_DLA$predicted, levels = c(0, 1))
+Model_20_DLA$actual <- factor(Model_20_DLA$actual, levels = c(1, 0))
+
+Model_20_DLA_roc <- roc(Model_20_DLA$actual, Model_20_DLA$predicted_prob)
+Model_20_DLA_auc <- auc(Model_20_DLA_roc)
+Model_20_DLA_ci_value <- ci.auc(Model_20_DLA_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_20_DLA_auc, 3)))
+print(paste("95% CI:", round(Model_20_DLA_ci_value[1], 3), "-", round(Model_20_DLA_ci_value[3], 3)))
+
+# 计算混淆矩阵
+DLA_conf_matrix <- confusionMatrix(Model_20_DLA$predicted, Model_20_DLA$actual)
+
+# 计算准确率
+DLA_accuracy <- DLA_conf_matrix$overall['Accuracy']
+
+# 计算AUC
+DLA_auc <- roc(Model_20_DLA$actual, Model_20_DLA$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+DLA_ppv <- DLA_conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+DLA_npv <- DLA_conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+DLA_sensitivity <- DLA_conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+DLA_specificity <- DLA_conf_matrix$byClass['Specificity']
+
+# Benign and Malignant count
+DLA_count <- table(Model_20_DLA$actual)
+
+print(paste("Accuracy:", round(DLA_accuracy, 3)))
+print(paste("AUC:", round(DLA_auc, 3)))
+print(paste("PPV:", round(DLA_ppv, 3)))
+print(paste("NPV:", round(DLA_npv, 3)))
+print(paste("Sensitivity:", round(DLA_sensitivity, 3)))
+print(paste("Specificity:", round(DLA_specificity, 3)))
+print(paste("Benign:", DLA_count[1]))
+print(paste("Malignant:", DLA_count[2]))
+
+
+```
+
+
+## 3.11 Mean of Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+
+sum_count_1 <- sum(cv1_count[1], cv2_count[1], cv3_count[1], cv4_count[1], cv5_count[1], cv6_count[1], cv7_count[1], cv8_count[1], cv9_count[1], cv10_count[1])
+
+sum_count_2 <- sum(cv1_count[2], cv2_count[2], cv3_count[2], cv4_count[2], cv5_count[2], cv6_count[2], cv7_count[2], cv8_count[2], cv9_count[2], cv10_count[2])
+
+# 打印结果
+
+print(paste("Benign:", sum_count_1))
+print(paste("Malignant:", sum_count_2))
+
+```
+
+
+# 4. ROC
+## 4.1 prediction and performance
+```{r}
+# cv1
+# 创建ROCR预测对象
+pred_cv1 <- prediction(cv1$predicted_prob, cv1$actual)
+# 计算AUC
+perf_auc_cv1 <- performance(pred_cv1, "auc")
+auc_cv1 <- as.numeric(performance(pred_cv1, "auc")@y.values)
+slotNames(perf_auc_cv1)
+# 创建ROC曲线
+perf_roc_cv1 <- performance(pred_cv1, measure = "tpr", x.measure = "fpr")
+
+# cv2
+pred_cv2 <- prediction(cv2$predicted_prob, cv2$actual)
+perf_auc_cv2 <- performance(pred_cv2, "auc")
+auc_cv2 <- as.numeric(performance(pred_cv2, "auc")@y.values)
+perf_roc_cv2 <- performance(pred_cv2, measure = "tpr", x.measure = "fpr")
+
+# cv3
+pred_cv3 <- prediction(cv3$predicted_prob, cv3$actual)
+perf_auc_cv3 <- performance(pred_cv3, "auc")
+auc_cv3 <- as.numeric(performance(pred_cv3, "auc")@y.values)
+perf_roc_cv3 <- performance(pred_cv3, measure = "tpr", x.measure = "fpr")
+
+# cv4
+pred_cv4 <- prediction(cv4$predicted_prob, cv4$actual)
+perf_auc_cv4 <- performance(pred_cv4, "auc")
+auc_cv4 <- as.numeric(performance(pred_cv4, "auc")@y.values)
+perf_roc_cv4 <- performance(pred_cv4, measure = "tpr", x.measure = "fpr")
+
+# cv5
+pred_cv5 <- prediction(cv5$predicted_prob, cv5$actual)
+perf_auc_cv5 <- performance(pred_cv5, "auc")
+auc_cv5 <- as.numeric(performance(pred_cv5, "auc")@y.values)
+perf_roc_cv5 <- performance(pred_cv5, measure = "tpr", x.measure = "fpr")
+
+# cv6
+pred_cv6 <- prediction(cv6$predicted_prob, cv6$actual)
+perf_auc_cv6 <- performance(pred_cv6, "auc")
+auc_cv6 <- as.numeric(performance(pred_cv6, "auc")@y.values)
+perf_roc_cv6 <- performance(pred_cv6, measure = "tpr", x.measure = "fpr")
+
+# cv7
+pred_cv7 <- prediction(cv7$predicted_prob, cv7$actual)
+perf_auc_cv7 <- performance(pred_cv7, "auc")
+auc_cv7 <- as.numeric(performance(pred_cv7, "auc")@y.values)
+perf_roc_cv7 <- performance(pred_cv7, measure = "tpr", x.measure = "fpr")
+
+# cv8
+pred_cv8 <- prediction(cv8$predicted_prob, cv8$actual)
+perf_auc_cv8 <- performance(pred_cv8, "auc")
+auc_cv8 <- as.numeric(performance(pred_cv8, "auc")@y.values)
+perf_roc_cv8 <- performance(pred_cv8, measure = "tpr", x.measure = "fpr")
+
+# cv9
+pred_cv9 <- prediction(cv9$predicted_prob, cv9$actual)
+perf_auc_cv9 <- performance(pred_cv9, "auc")
+auc_cv9 <- as.numeric(performance(pred_cv9, "auc")@y.values)
+perf_roc_cv9 <- performance(pred_cv9, measure = "tpr", x.measure = "fpr")
+
+# cv10
+pred_cv10 <- prediction(cv10$predicted_prob, cv10$actual)
+perf_auc_cv10 <- performance(pred_cv10, "auc")
+auc_cv10 <- as.numeric(performance(pred_cv10, "auc")@y.values)
+perf_roc_cv10 <- performance(pred_cv10, measure = "tpr", x.measure = "fpr")
+
+```
+
+## 4.2 plot
+```{r}
+# 创建数据框并添加标识列
+df1 <- tibble(x = perf_roc_cv1@x.values[[1]], y = perf_roc_cv1@y.values[[1]], dataset = "CV1")
+df2 <- tibble(x = perf_roc_cv2@x.values[[1]], y = perf_roc_cv2@y.values[[1]], dataset = "CV2")
+
+df3 <- tibble(x = perf_roc_cv3@x.values[[1]], y = perf_roc_cv3@y.values[[1]], dataset = "CV3")
+df4 <- tibble(x = perf_roc_cv4@x.values[[1]], y = perf_roc_cv4@y.values[[1]], dataset = "CV4")
+
+df5 <- tibble(x = perf_roc_cv5@x.values[[1]], y = perf_roc_cv5@y.values[[1]], dataset = "CV5")
+df6 <- tibble(x = perf_roc_cv6@x.values[[1]], y = perf_roc_cv6@y.values[[1]], dataset = "CV6")
+
+df7 <- tibble(x = perf_roc_cv7@x.values[[1]], y = perf_roc_cv7@y.values[[1]], dataset = "CV7")
+df8 <- tibble(x = perf_roc_cv8@x.values[[1]], y = perf_roc_cv8@y.values[[1]], dataset = "CV8")
+
+df9 <- tibble(x = perf_roc_cv9@x.values[[1]], y = perf_roc_cv9@y.values[[1]], dataset = "CV9")
+df10 <- tibble(x = perf_roc_cv10@x.values[[1]], y = perf_roc_cv10@y.values[[1]], dataset = "CV10")
+
+# 合并数据框
+combined_df <- bind_rows(df1, df2, df3, df4, df5, df6, df7, df8, df9, df10)
+
+combined_df$dataset=factor(combined_df$dataset, levels=c('CV1', 'CV2', 'CV3', 'CV4', 'CV5', 'CV6', 'CV7', 'CV8', 'CV9', 'CV10'))
+
+pdf('20250116_01_Training_Dataset_ROC_v1.pdf', width = 8, height = 6)
+# 绘制图形
+ggplot(combined_df, aes(x = x, y = y, color = dataset)) + 
+  geom_line(linetype = "solid", linewidth = 1) +
+  #geom_point(size = 1) +
+  theme_bw() +
+  labs(color="CV", x="False Positive Rate", y="True Positive Rate", fill = "CV", title = "") + #  (x: 1-Specificity, y: Sensitivity)
+  # scale_color_brewer(palette = "Purples") + 
+  theme(legend.position = "bottom",
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold"))+
+  scale_color_manual(values = c('#2C73D2', '#FF8066', '#01a0a7', '#75c8cc', '#f0d7bc', '#d5b26c', '#a56ba7', '#e069a6', '#941456', '#fcbc10'))+
+  geom_text(aes(x = 0.55, y = 0.16, label = paste0("Benign: ", sum_count_2)),
+            hjust = "left", vjust = "bottom", size = 5, color="black")+
+  geom_text(aes(x = 0.55, y = 0.08, label = paste0("Malignant: ", sum_count_1)),
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x = 0.55, y = 0, label = paste0("AUC (95% CI): ", round(Model_20_DLA_auc, 3)," (",round(Model_20_DLA_ci_value[1], 3), "-", round(Model_20_DLA_ci_value[3], 3),")")),
+            hjust = "left", vjust = "bottom", size = 5, color="black")+
+  theme(axis.text.x = element_text(color="black", size=20),
+        axis.text.y = element_text(color="black", size=20),
+        axis.title.x = element_text( color="black", size=20),
+        axis.title.y = element_text(color="black", size=20))
+dev.off()
+
+```
+
+## 4.3 Confusion Matrix heatmap
+```{r}
+# 初始化一个空的混淆矩阵
+combined_conf_matrix <- NULL
+
+# 合并混淆矩阵
+for (i in 1:10) {
+  conf_matrix <- get(paste0("cv", i, "_conf_matrix"))
+  if (is.null(combined_conf_matrix)) {
+    combined_conf_matrix <- conf_matrix$table
+  } else {
+    combined_conf_matrix <- combined_conf_matrix + conf_matrix$table
+  }
+}
+
+# 打印合并后的混淆矩阵
+print(combined_conf_matrix)
+
+# 将混淆矩阵转换为数据框格式
+conf_matrix_df <- as.data.frame(as.table(combined_conf_matrix))
+
+# 重新命名列名
+names(conf_matrix_df) <- c("Prediction", "Reference", "Freq")
+
+conf_matrix_df$Prediction <- factor(conf_matrix_df$Prediction, levels = c("0", "1"))
+
+pdf('20250116_01_Training_Dataset_Heatmap_v1.pdf', width = 8, height = 6)
+ggplot(data = conf_matrix_df, aes(x = Prediction, y = Reference)) +
+  geom_tile(aes(fill = Freq), color = "#FFFFFF") +
+  geom_text(aes(label = Freq), vjust = 1, size = 10) + # 调整数字的大小为15
+  scale_fill_gradient(low = "#FFFFFF", high = "#337BB8") +
+  theme_minimal() +
+  labs(title = "Training Dataset", x = "Predicted", y = "Actual") +
+  scale_x_discrete(labels=c("0"="Benign", "1"="Malignant")) +
+  scale_y_discrete(labels=c("0"="Benign", "1"="Malignant")) +
+  theme(legend.position = "right",
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold", size = 20),  # 调整轴标题字号
+        axis.text.x = element_text(face = "bold", color = "black", size = 20),  # 调整x轴标签字号
+        axis.text.y = element_text(face = "bold", color = "black", size = 20),  # 调整y轴标签字号
+        plot.title = element_text(face = "bold", color = "black", size = 20))  # 调整图标题字号
+
+dev.off()
+
+```
+

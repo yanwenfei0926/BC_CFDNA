@@ -1,0 +1,203 @@
+---
+html_document: default
+author: "Wei"
+date: '2024-08-05'
+output:
+  html_document:
+    df_print: paged
+title: "EndMotif and Breakpoint"
+---
+
+# 1. loading library and function
+```{r}
+rm(list = ls())
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(pheatmap))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+
+# 2. loading data
+```{r}
+data_feature <- read.xlsx("./Lasso_all_20241219_all_features.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data1 <- read.xlsx("./01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(predicted_data1)<-c("SampleID", "actual", "predicted", "predicted_prob")
+
+predicted_data <- predicted_data1
+
+all_data <- left_join(predicted_data, data_feature, by="SampleID")
+
+```
+
+# 2. loading data2
+```{r}
+#Clinical <- read_rds("/Users/xuewei/ZxProjects/20240422_CRC_cfDNA/21_Clinical_information/CRC_Clinical_info_20240730.rds")
+
+
+feature_name <- read.xlsx("./Feature.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+transposed_feature_name <- t(feature_name)
+transposed_feature_name <- as.data.frame(transposed_feature_name)
+transposed_feature_name <- cbind(RowName = rownames(transposed_feature_name), transposed_feature_name)
+
+# 重置行名
+rownames(transposed_feature_name) <- NULL
+colnames(transposed_feature_name)[colnames(transposed_feature_name)=="1"] <- "Feature"
+
+```
+# 3. data processed
+## 3.1 join
+```{r}
+data_feature_2 <- all_data %>% 
+  dplyr::mutate(status_group = case_when(actual == "0" ~ "noLNM",
+                                         actual == "1" ~ "LNM",
+                                  )) %>% 
+  distinct()
+colnames(data_feature_2)[colnames(data_feature_2)=="SampleID"] <- "Sample"
+
+```
+
+
+## 3.2 calculate wilcox between noLNM and LNM, and select significant features 
+```{r}
+data_feature_all <- data_feature_2 %>% 
+  select(status_group, F1:F9999)
+
+features <- setdiff(names(data_feature_all), "status_group")
+
+data_feature_wilcox <- data.frame(Feature = character(),
+                                  P_Value = numeric(),
+                                  Median_noLNM = numeric(),
+                                  Median_LNM = numeric(),
+                                  stringsAsFactors = FALSE)
+
+# 遍历每个特征进行Wilcoxon检验
+for (feature in features) {
+    # 选择noLNM和LNM组的数据
+    group_noLNM <- data_feature_all[data_feature_all$status_group == "noLNM", feature]
+    group_LNM <- data_feature_all[data_feature_all$status_group == "LNM", feature]
+    
+    # 计算中位数
+    median_noLNM <- median(group_noLNM, na.rm = TRUE)
+    median_LNM <- median(group_LNM, na.rm = TRUE)
+
+    # 进行Wilcoxon秩和检验
+    test_result <- wilcox.test(group_noLNM, group_LNM, exact = FALSE)
+
+    # 保存结果到数据框
+    data_feature_wilcox <- rbind(data_feature_wilcox, data.frame(Feature = feature,
+                                         P_Value = test_result$p.value,
+                                         Median_noLNM = median_noLNM,
+                                         Median_LNM = median_LNM))
+}
+
+
+data_feature_wilcox2 <- data_feature_wilcox %>% 
+  filter(P_Value < 0.05)
+
+data_feature_wilcox3 <- left_join(data_feature_wilcox2,transposed_feature_name,by ="Feature")
+
+write.csv(data_feature_wilcox3, "./data_feature_wilcox.csv", row.names = FALSE)
+
+```
+
+# 30. Top 30 features
+## 30.1 colname
+```{r}
+data_feature_wilcox3_max30 <- data_feature_wilcox3 %>% 
+  mutate(ratio = Median_noLNM/ Median_LNM) %>% 
+  arrange(ratio) %>% 
+  slice_max(n = 30, order_by = ratio)
+
+data_feature_wilcox3_min30 <- data_feature_wilcox3 %>% 
+  mutate(ratio = Median_noLNM/ Median_LNM) %>% 
+  arrange(ratio) %>% 
+  slice_min(n = 30, order_by = ratio)
+
+data_feature_wilcox4 <- rbind(data_feature_wilcox3_max30, data_feature_wilcox3_min30)
+
+```
+
+## 30.2 data_feature_100
+```{r}
+# join_data_feature %>%
+#   group_by(OS_time) %>%
+#   summarise(count = n())
+
+Feature_num <- data_feature_wilcox4$Feature
+
+data_feature_100 <- data_feature_2 %>% 
+  dplyr::select(Sample, status_group, data_feature_wilcox4$Feature)
+
+# write.table(data_feature_100, "data_feature_100.txt", sep = "\t", row.names = F)
+
+```
+
+
+## 30.3. data_feature_100 plot
+```{r}
+library(dplyr)
+data_feature_100 <- data_feature_100 %>% 
+  arrange(status_group)
+
+# 保存样本名称和预测组别信息，以便后续使用
+sample_info <- data_feature_100[, c("Sample", "status_group")]
+
+# 计算z-score，注意排除第一列（Sample）和Group_LN_Status列
+# data_z <- t(scale(t(data_feature_100[, !names(data_feature_100) %in% c("Sample", "Group_LN_Status")])))
+data_z <- scale(data_feature_100[, !names(data_feature_100) %in% c("Sample", "status_group")])
+
+# 转换回数据框，并添加样本和组别信息
+data_z <- data.frame(Sample = sample_info$Sample, 
+                     status_group = sample_info$status_group, 
+                     data_z)
+
+# annotation_row
+annotation_row = data.frame(
+  Group = factor(data_z$status_group)
+)
+rownames(annotation_row) = data_z$Sample
+
+# annotation_colors
+ann_colors = list(
+  Group = c('noLNM' = "#ababab", 'LNM' = "#545454")
+)
+
+pheatmap_data_z <- data_z %>% 
+  select(-status_group) %>%
+  column_to_rownames(var = "Sample")
+
+
+pheatmap_data_z <- pheatmap_data_z %>%
+  dplyr::select(-F6922, -F6921, -F3522, -F3316, -F3465, -F3317,-F3044)
+
+pdf("./wilcox/20241126_cfDNA_17_feature_100_pheatmap_v1.pdf", height=4, width=8)
+
+pheatmap(pheatmap_data_z, 
+         color = colorRampPalette(c("#0000cd","#FFFFFF","#ff3c00"))(100)[0:100], 
+         fontsize=9, 
+         fontsize_row=9, 
+         # display_numbers = matrix(ifelse(copper_pheatmap2 > 1, "*", ""), nrow(copper_pheatmap2)),
+         breaks = seq(-5,5,1/10), legend_breaks = seq(-5,5,2.5),
+         annotation_row = annotation_row, 
+         annotation_colors = ann_colors, 
+         cluster_rows=F, 
+         cluster_cols=T,
+         border_color = NA,
+         show_rownames = FALSE,  # 隐藏纵坐标标签
+         show_colnames = FALSE)
+dev.off()
+
+```
+

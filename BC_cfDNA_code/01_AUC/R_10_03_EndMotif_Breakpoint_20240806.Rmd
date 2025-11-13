@@ -1,0 +1,931 @@
+---
+html_document: default
+author: "Wei"
+date: '2024-08-05'
+output:
+  html_document:
+    df_print: paged
+title: "EndMotif and Breakpoint"
+---
+
+# 1. loading library and function
+```{r}
+rm(list = ls())
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(pheatmap))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+
+# 2. loading data
+```{r}
+data_feature <- read.xlsx("20240913-all_data_rmL.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+
+
+predicted_data1 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data2 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data3 <- read.xlsx("D:/Desktop/项目/20240418_BC_cfDNA/02_AUC_LWJ/BC_cfDNA_20241113_model/21_Stacked_ensemble_v4/03_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+predicted_data <-bind_rows(predicted_data1, predicted_data2, predicted_data3)
+colnames(predicted_data)[colnames(predicted_data)=="Group"] <- "SampleID"
+colnames(predicted_data)[colnames(predicted_data)=="Predicted.Status"] <- "predicted"
+colnames(predicted_data)[colnames(predicted_data)=="True.Status"] <- "actual"
+colnames(predicted_data)[colnames(predicted_data)=="Malignant.Probability"] <- "predicted_prob"
+
+
+all_data <- left_join(predicted_data, data_feature, by="SampleID")
+
+```
+
+# 2. loading data2
+```{r}
+#Clinical <- read_rds("/Users/xuewei/ZxProjects/20240422_CRC_cfDNA/21_Clinical_information/CRC_Clinical_info_20240730.rds")
+
+
+feature_name <- read.xlsx("./Feature_id/feature.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+transposed_feature_name <- t(feature_name)
+transposed_feature_name <- as.data.frame(transposed_feature_name)
+transposed_feature_name <- cbind(RowName = rownames(transposed_feature_name), transposed_feature_name)
+
+# 重置行名
+rownames(transposed_feature_name) <- NULL
+colnames(transposed_feature_name)[colnames(transposed_feature_name)=="1"] <- "Feature"
+
+```
+# 3. data processed
+## 3.1 join
+```{r}
+data_feature_2 <- all_data %>% 
+  dplyr::mutate(status_group = case_when(predicted == "0" ~ "Benign",
+                                         predicted == "1" ~ "Malignant",
+                                  )) %>% 
+  distinct()
+colnames(data_feature_2)[colnames(data_feature_2)=="SampleID"] <- "Sample"
+
+```
+
+
+## 3.2 calculate wilcox between Benign and Malignant, and select significant features 
+```{r}
+data_feature_all <- data_feature_2 %>% 
+  select(status_group, F1:F9999)
+# write.table(test_join_data_feature, "test_join_data_feature.txt", sep = "\t", row.names = F)
+
+# 获取除了'Group_predicted'之外的所有列名
+features <- setdiff(names(data_feature_all), "status_group")
+
+# 初始化一个空的数据框来存储结果
+data_feature_wilcox <- data.frame(Feature = character(),
+                                  P_Value = numeric(),
+                                  Median_Benign = numeric(),
+                                  Median_Malignant = numeric(),
+                                  stringsAsFactors = FALSE)
+
+# 遍历每个特征进行Wilcoxon检验
+for (feature in features) {
+    # 选择Benign和Malignant组的数据
+    group_Benign <- data_feature_all[data_feature_all$status_group == "Benign", feature]
+    group_Malignant <- data_feature_all[data_feature_all$status_group == "Malignant", feature]
+    
+    # 计算中位数
+    median_Benign <- median(group_Benign, na.rm = TRUE)
+    median_Malignant <- median(group_Malignant, na.rm = TRUE)
+
+    # 进行Wilcoxon秩和检验
+    test_result <- wilcox.test(group_Benign, group_Malignant, exact = FALSE)
+
+    # 保存结果到数据框
+    data_feature_wilcox <- rbind(data_feature_wilcox, data.frame(Feature = feature,
+                                         P_Value = test_result$p.value,
+                                         Median_Benign = median_Benign,
+                                         Median_Malignant = median_Malignant))
+}
+
+
+data_feature_wilcox2 <- data_feature_wilcox %>% 
+  filter(P_Value < 0.001)
+
+data_feature_wilcox3 <- left_join(data_feature_wilcox2,transposed_feature_name,by ="Feature")
+
+write.csv(data_feature_wilcox3, "./wilcox/data_feature_wilcox.csv", row.names = FALSE)
+
+```
+
+
+# 10. End Motif (Top 100 features)
+## 10.1 colname
+```{r}
+# EndMotif <- read.xlsx("/Users/xuewei/ZxProjects/20240422_CRC_cfDNA/22_AUC/Top100_features/20240628-groupD_feature_names.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+# colnames(EndMotif) <- c("Feature_num", "Feature_chr", "Type")
+# 
+# EndMotif2 <- EndMotif %>% 
+#   filter(Type == "Endmotif") %>% 
+#   filter(Feature_chr != "a/g") %>% 
+#   unique()
+
+```
+
+## 10.2 data_Endmotif
+```{r}
+
+data_Endmotif <- data_feature_all %>%
+  dplyr::select(status_group, F1224, F1319, F1256, F1255, F1223)
+colnames(data_Endmotif) <- c("status_group", "AAGG", "CGGG", "AGGG", "AGGC", "AAGC")
+data_Endmotif[, 2:6] <- scale(data_Endmotif[, 2:6])
+```
+
+
+## 10.3 data_Endmotif plot
+```{r}
+summary(data_Endmotif[data_Endmotif$status_group=="Benign",]$AAGG)
+summary(data_Endmotif[data_Endmotif$status_group=="Malignant",]$AAGG)
+p <- wilcox.test(data_Endmotif[data_Endmotif$status_group=="Benign",]$AAGG, data_Endmotif[data_Endmotif$status_group=="Malignant",]$AAGG)
+p$p.value
+
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Endmotif, cols = c(AAGG, CGGG, AGGG, AGGC, AAGC), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$status_group),
+                                levels = c("AAGG.Benign", "AAGG.Malignant", 
+                                           "CGGG.Benign", "CGGG.Malignant", 
+                                           "AGGG.Benign", "AGGG.Malignant",
+                                           "AGGC.Benign", "AGGC.Malignant",
+                                           "AAGC.Benign", "AAGC.Malignant"))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("AAGG.Benign", "AAGG.Malignant"), 
+                        c("CGGG.Benign", "CGGG.Malignant"), 
+                        c("AGGG.Benign", "AGGG.Malignant"),
+                        c("AGGC.Benign", "AGGC.Malignant"),
+                        c("AAGC.Benign", "AAGC.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_10_Endmotif_boxplot_v1.pdf", height=4, width=14)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = status_group)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_violin(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.53, color = "black", size = 4) + 
+  theme_classic() +
+  # theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Endmotif, cols = c("AAGG", "CGGG", "AGGG", "AGGC", "AAGC"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$status_group),
+                                levels = c("AAGG.Benign", "AAGG.Malignant", 
+                                           "CGGG.Benign", "CGGG.Malignant", 
+                                           "AGGG.Benign", "AGGG.Malignant",
+                                           "AGGC.Benign", "AGGC.Malignant",
+                                           "AAGC.Benign", "AAGC.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+
+data_long$type = factor(data_long$status_group, levels=c("Malignant","Benign"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = status_group, color = status_group)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = status_group), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_10_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 12, dpi = 300)
+
+
+```
+
+
+# 20. Break Point (Top 100 features)
+## 20.1 data_Breakpoint
+```{r}
+data_Breakpoint <- data_feature_all %>% 
+  dplyr::select(status_group, F1206, F1210, F1211, F1209, F1205)
+colnames(data_Breakpoint) <- c("Group_predicted", "GCAGTA", "CTTGTT", "TGCGAC", "ACGACG", "AATTGC")
+# write.table(data_Breakpoint, "data_Breakpoint.txt", sep = "\t", row.names = F)
+data_Breakpoint[, 2:6] <- scale(data_Breakpoint[, 2:6])
+```
+
+## 20.2 data_Breakpoint plot
+```{r}
+
+
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Breakpoint, cols = c("GCAGTA", "CTTGTT", "TGCGAC", "ACGACG", "AATTGC"), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("GCAGTA.Benign", "GCAGTA.Malignant",
+                                           "CTTGTT.Benign", "CTTGTT.Malignant",
+                                           "TGCGAC.Benign", "TGCGAC.Malignant",
+                                           "ACGACG.Benign", "ACGACG.Malignant",
+                                           "AATTGC.Benign", "AATTGC.Malignant"
+                                          ))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("GCAGTA.Benign", "GCAGTA.Malignant"),
+                        c("CTTGTT.Benign", "CTTGTT.Malignant"),
+                        c("TGCGAC.Benign", "TGCGAC.Malignant"),
+                        c("ACGACG.Benign", "ACGACG.Malignant"),
+                        c("AATTGC.Benign", "AATTGC.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_11_Breakpoint_boxplot_v1.pdf", height=4.5, width=20)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = Group_predicted)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.51, color = "black", size = 4) + 
+  theme_classic() +
+  theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies (%)", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Breakpoint, cols = c("GCAGTA", "CTTGTT", "TGCGAC", "ACGACG", "AATTGC"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("GCAGTA.Benign", "GCAGTA.Malignant",
+                                           "CTTGTT.Benign", "CTTGTT.Malignant",
+                                           "TGCGAC.Benign", "TGCGAC.Malignant",
+                                           "ACGACG.Benign", "ACGACG.Malignant",
+                                           "AATTGC.Benign", "AATTGC.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+
+data_long$type = factor(data_long$Group_predicted, levels=c("Benign", "Malignant"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = Group_predicted, color = Group_predicted)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = Group_predicted), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_11_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 12, dpi = 300)
+
+
+```
+## 20.1 data_Breakpoint
+```{r}
+data_Breakpoint_2 <- data_feature_all %>% 
+  dplyr::select(status_group, F9501, F9576, F9532, F9534, F9427)
+colnames(data_Breakpoint_2) <- c("Group_predicted", "MER45C", "MER65-int", "MER52A", "MER52D", "MER110")
+# write.table(data_Breakpoint, "data_Breakpoint.txt", sep = "\t", row.names = F)
+data_Breakpoint_2[, 2:6] <- scale(data_Breakpoint_2[, 2:6])
+```
+
+## 20.2 data_Breakpoint plot
+```{r}
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Breakpoint_2, cols = c("MER45C", "MER65-int", "MER52A", "MER52D", "MER110"), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("MER45C.Benign", "MER45C.Malignant",
+                                           "MER65-int.Benign", "MER65-int.Malignant",
+                                           "MER52A.Benign", "MER52A.Malignant",
+                                           "MER52D.Benign", "MER52D.Malignant",
+                                           "MER110.Benign", "MER110.Malignant"))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("MER45C.Benign", "MER45C.Malignant"),
+                        c("MER65-int.Benign", "MER65-int.Malignant"),
+                        c("MER52A.Benign", "MER52A.Malignant"),
+                        c("MER52D.Benign", "MER52D.Malignant"),
+                        c("MER110.Benign", "MER110.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_12_Breakpoint_boxplot_v1.pdf", height=7, width=17)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = Group_predicted)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.51, color = "black", size = 4) + 
+  theme_classic() +
+  theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Breakpoint_2, cols = c("MER45C", "MER65-int", "MER52A", "MER52D", "MER110"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("MER45C.Benign", "MER45C.Malignant",
+                                           "MER65-int.Benign", "MER65-int.Malignant",
+                                           "MER52A.Benign", "MER52A.Malignant",
+                                           "MER52D.Benign", "MER52D.Malignant",
+                                           "MER110.Benign", "MER110.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+
+data_long$type = factor(data_long$Group_predicted, levels=c("Benign", "Malignant"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = Group_predicted, color = Group_predicted)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = Group_predicted), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_12_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 12, dpi = 300)
+
+
+```
+
+```{r}
+data_Breakpoint_3 <- data_feature_all %>% 
+  dplyr::select(status_group, F8781, F8744, F8782, F8761, F8755)
+colnames(data_Breakpoint_3) <- c("Group_predicted", "AluYk2", "AluSc", "AluYk3", "AluY", "AluSx")
+data_Breakpoint_3[, 2:6] <- scale(data_Breakpoint_3[, 2:6])
+```
+
+## 20.2 data_Breakpoint plot
+```{r}
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Breakpoint_3, cols = c("AluYk2", "AluSc", "AluYk3", "AluY", "AluSx"), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("AluYk2.Benign", "AluYk2.Malignant",
+                                           "AluSc.Benign", "AluSc.Malignant",
+                                           "AluYk3.Benign", "AluYk3.Malignant",
+                                           "AluY.Benign", "AluY.Malignant",
+                                           "AluSx.Benign", "AluSx.Malignant"))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("AluYk2.Benign", "AluYk2.Malignant"),
+                        c("AluSc.Benign", "AluSc.Malignant"),
+                        c("AluYk3.Benign", "AluYk3.Malignant"),
+                        c("AluY.Benign", "AluY.Malignant"),
+                        c("AluSx.Benign", "AluSx.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_13_Breakpoint_boxplot_v1.pdf", height=6, width=18)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = Group_predicted)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.7, color = "black", size = 4) + 
+  theme_classic() +
+  theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Breakpoint_3, cols = c("AluYk2", "AluSc", "AluYk3", "AluY", "AluSx"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("AluYk2.Benign", "AluYk2.Malignant",
+                                           "AluSc.Benign", "AluSc.Malignant",
+                                           "AluYk3.Benign", "AluYk3.Malignant",
+                                           "AluY.Benign", "AluY.Malignant",
+                                           "AluSx.Benign", "AluSx.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+data_long$type = factor(data_long$Group_predicted, levels=c("Benign", "Malignant"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = Group_predicted, color = Group_predicted)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = Group_predicted), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_13_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 12, dpi = 300)
+
+
+```
+##
+```{r}
+data_Breakpoint_4 <- data_feature_all %>% 
+  dplyr::select(status_group, F8690, F8696, F8693, F8695)
+colnames(data_Breakpoint_4) <- c("Group_predicted", "t/c", "c/t", "a/c", "c/a")
+data_Breakpoint_4[, 2:5] <- scale(data_Breakpoint_4[, 2:5])
+```
+
+## 20.2 data_Breakpoint plot
+```{r}
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Breakpoint_4, cols = c("t/c", "c/t", "a/c", "c/a"), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("t/c.Benign", "t/c.Malignant",
+                                           "c/t.Benign", "c/t.Malignant",
+                                           "a/c.Benign", "a/c.Malignant",
+                                           "c/a.Benign", "c/a.Malignant"))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("t/c.Benign", "t/c.Malignant"),
+                        c("c/t.Benign", "c/t.Malignant"),
+                        c("a/c.Benign", "a/c.Malignant"),
+                        c("c/a.Benign", "c/a.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_14_Breakpoint4_boxplot_v1.pdf", height=6, width=18)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = Group_predicted)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.7, color = "black", size = 4) + 
+  theme_classic() +
+  theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Breakpoint_4, cols = c("t/c", "c/t", "a/c", "c/a"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("t/c.Benign", "t/c.Malignant",
+                                           "c/t.Benign", "c/t.Malignant",
+                                           "a/c.Benign", "a/c.Malignant",
+                                           "c/a.Benign", "c/a.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+data_long$type = factor(data_long$Group_predicted, levels=c("Benign", "Malignant"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = Group_predicted, color = Group_predicted)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = Group_predicted), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_14_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 12, dpi = 300)
+
+
+```
+
+```{r}
+data_Breakpoint_5 <- data_feature_all %>% 
+  dplyr::select(status_group, F9180, F9182, F9281, F9371, F9215)
+colnames(data_Breakpoint_5) <- c("Group_predicted", "LTR12C", "LTR12E", "LTR37B", "LTR80B", "LTR1A2")
+data_Breakpoint_5[, 2:6] <- scale(data_Breakpoint_5[, 2:6])
+```
+
+## 20.2 data_Breakpoint plot
+```{r}
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Breakpoint_5, cols = c("LTR12C", "LTR12E", "LTR37B", "LTR80B", "LTR1A2"), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("LTR12C.Benign", "LTR12C.Malignant",
+                                           "LTR12E.Benign", "LTR12E.Malignant",
+                                           "LTR37B.Benign", "LTR37B.Malignant",
+                                           "LTR80B.Benign", "LTR80B.Malignant",
+                                           "LTR1A2.Benign", "LTR1A2.Malignant"))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("LTR12C.Benign", "LTR12C.Malignant"),
+                        c("LTR12E.Benign", "LTR12E.Malignant"),
+                        c("LTR37B.Benign", "LTR37B.Malignant"),
+                        c("LTR80B.Benign", "LTR80B.Malignant"),
+                        c("LTR1A2.Benign", "LTR1A2.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_15_Breakpoint_boxplot_v1.pdf", height=4.5, width=16)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = Group_predicted)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.5, color = "black", size = 4) + 
+  theme_classic() +
+  theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Breakpoint_5, cols = c("LTR12C", "LTR12E", "LTR37B", "LTR80B", "LTR1A2"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("LTR12C.Benign", "LTR12C.Malignant",
+                                           "LTR12E.Benign", "LTR12E.Malignant",
+                                           "LTR37B.Benign", "LTR37B.Malignant",
+                                           "LTR80B.Benign", "LTR80B.Malignant",
+                                           "LTR1A2.Benign", "LTR1A2.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+data_long$type = factor(data_long$Group_predicted, levels=c("Benign", "Malignant"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = Group_predicted, color = Group_predicted)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = Group_predicted), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_15_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 12, dpi = 300)
+
+
+```
+
+```{r}
+data_Breakpoint_6 <- data_feature_all %>% 
+  dplyr::select(status_group, F9823, F9812, F9803, F9822, F9831)
+colnames(data_Breakpoint_6) <- c("Group_predicted", "Tigger2b_Pri", "Tigger18a", "Tigger14a", "Tigger2a", "Tigger4b")
+data_Breakpoint_6[, 2:6] <- scale(data_Breakpoint_6[, 2:6])
+```
+
+
+## 20.2 data_Breakpoint plot
+```{r}
+
+# Reshape data from wide to long format
+data_long <- pivot_longer(data_Breakpoint_6, cols = c("Tigger2b_Pri", "Tigger18a", "Tigger14a", "Tigger2a", "Tigger4b"), names_to = "Measure", values_to = "Value")
+
+# Create a new factor to control the order of the x-axis
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("Tigger2b_Pri.Benign", "Tigger2b_Pri.Malignant",
+                                           "Tigger18a.Benign", "Tigger18a.Malignant",
+                                           "Tigger14a.Benign", "Tigger14a.Malignant",
+                                           "Tigger2a.Benign", "Tigger2a.Malignant",
+                                           "Tigger4b.Benign", "Tigger4b.Malignant"))
+
+# Create a list for pairwise comparisons
+comparison_list <- list(c("Tigger2b_Pri.Benign", "Tigger2b_Pri.Malignant"),
+                        c("Tigger18a.Benign", "Tigger18a.Malignant"),
+                        c("Tigger14a.Benign", "Tigger14a.Malignant"),
+                        c("Tigger2a.Benign", "Tigger2a.Malignant"),
+                        c("Tigger4b.Benign", "Tigger4b.Malignant"))
+
+pdf("./wilcox/20241126_cfDNA_16_Breakpoint_boxplot_v1.pdf", height=4.5, width=6)
+# Plot
+ggplot(data_long, aes(x = Group_Order, y = Value, fill = Group_predicted)) +
+  geom_boxplot(width = 0.4, size = 1) +
+  # geom_quasirandom(width = 0.1, varwidth = TRUE, cex = 2, method = "quasirandom")+
+  geom_signif(comparisons = comparison_list, 
+              test = "wilcox.test",
+              map_signif_level = TRUE) +
+  stat_summary(fun = median, geom = "text", 
+               aes(label = sprintf("%0.3f", after_stat(y))),
+               vjust = 0.5, hjust = -0.6, color = "black", size = 4) + 
+  theme_classic() +
+  theme(legend.position = "NA") +
+  labs(title = "", x = NULL, y = "Frequencies", fill = "") +
+  scale_fill_manual(values = c("Benign" = "#7897BE", "Malignant" = "#BD7D76")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold", color = "black", size = 12),
+        axis.text.y = element_text(face = "bold", color = "black", size = 12),
+        axis.title.x = element_text(face = "bold", color = "black", size = 12),
+        axis.title.y = element_text(face = "bold", color = "black", size = 12),
+        # legend.position = "none",
+        panel.grid = element_blank(),
+        axis.line = element_line(linewidth = 0.5, colour = "black"),
+        axis.ticks = element_line(linewidth = 0.5, colour = "black"), axis.ticks.length = unit(0.5, "lines")) +
+  scale_x_discrete(labels = function(x) gsub("\\.Benign|\\.Malignant", "", x))  # Simplify x-axis labels
+dev.off()
+
+```
+
+
+```{r}
+data_long <- pivot_longer(data_Breakpoint_6, cols = c("Tigger2b_Pri", "Tigger18a", "Tigger14a", "Tigger2a", "Tigger4b"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("Tigger2b_Pri.Benign", "Tigger2b_Pri.Malignant",
+                                           "Tigger18a.Benign", "Tigger18a.Malignant",
+                                           "Tigger14a.Benign", "Tigger14a.Malignant",
+                                           "Tigger2a.Benign", "Tigger2a.Malignant",
+                                           "Tigger4b.Benign", "Tigger4b.Malignant"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+
+data_long$type = factor(data_long$Group_predicted, levels=c("Benign", "Malignant"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = Group_predicted, color = Group_predicted)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  #stat_compare_means(aes(group = Group_predicted), label = "p.format", size = 8, method = "wilcox.test", step.increase = 0.05) +
+  
+  theme_classic() +
+  scale_fill_manual(values = c("#ADC2E0", "#DBA59E")) + # 替换填充色
+  scale_color_manual(values = c("#7897BE", "#BD7D76"), guide = "none") + # 设置边框颜色，并取消图例
+  guides(fill = guide_legend(override.aes = list(color = NA, size = 14, shape = 21))) + # 统一填充图例样式
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./wilcox/20241126_cfDNA_16_Endmotif_boxplot_v3.png", PLOT_DATA, height = 7, width = 14, dpi = 300)
+
+
+```
+
+
+
+
+# 30. Top 30 features
+## 30.1 colname
+```{r}
+data_feature_wilcox3_max30 <- data_feature_wilcox3 %>% 
+  mutate(ratio = Median_Benign/ Median_Malignant) %>% 
+  arrange(ratio) %>% 
+  slice_max(n = 30, order_by = ratio)
+
+data_feature_wilcox3_min30 <- data_feature_wilcox3 %>% 
+  mutate(ratio = Median_Benign/ Median_Malignant) %>% 
+  arrange(ratio) %>% 
+  slice_min(n = 30, order_by = ratio)
+
+data_feature_wilcox4 <- rbind(data_feature_wilcox3_max30, data_feature_wilcox3_min30)
+
+```
+
+## 30.2 data_feature_100
+```{r}
+# join_data_feature %>%
+#   group_by(OS_time) %>%
+#   summarise(count = n())
+
+Feature_num <- data_feature_wilcox4$Feature
+
+data_feature_100 <- data_feature_2 %>% 
+  dplyr::select(Sample, status_group, data_feature_wilcox4$Feature)
+
+# write.table(data_feature_100, "data_feature_100.txt", sep = "\t", row.names = F)
+
+```
+
+
+## 30.3. data_feature_100 plot
+```{r}
+library(dplyr)
+data_feature_100 <- data_feature_100 %>% 
+  arrange(status_group)
+
+# 保存样本名称和预测组别信息，以便后续使用
+sample_info <- data_feature_100[, c("Sample", "status_group")]
+
+# 计算z-score，注意排除第一列（Sample）和Group_predicted列
+# data_z <- t(scale(t(data_feature_100[, !names(data_feature_100) %in% c("Sample", "Group_predicted")])))
+data_z <- scale(data_feature_100[, !names(data_feature_100) %in% c("Sample", "status_group")])
+
+# 转换回数据框，并添加样本和组别信息
+data_z <- data.frame(Sample = sample_info$Sample, 
+                     status_group = sample_info$status_group, 
+                     data_z)
+
+# annotation_row
+annotation_row = data.frame(
+  Group = factor(data_z$status_group)
+)
+rownames(annotation_row) = data_z$Sample
+
+# annotation_colors
+ann_colors = list(
+  Group = c('Benign' = "#7897BE", 'Malignant' = "#BD7D76")
+)
+
+pheatmap_data_z <- data_z %>% 
+  select(-status_group) %>%
+  column_to_rownames(var = "Sample")
+
+
+pheatmap_data_z <- pheatmap_data_z %>%
+  dplyr::select(-F6922, -F6921, -F3522, -F3316, -F3465, -F3317,-F3044)
+
+pdf("./wilcox/20241126_cfDNA_17_feature_100_pheatmap_v1.pdf", height=4, width=8)
+
+pheatmap(pheatmap_data_z, 
+         color = colorRampPalette(c("#0000cd","#FFFFFF","#ff3c00"))(100)[0:100], 
+         fontsize=9, 
+         fontsize_row=9, 
+         # display_numbers = matrix(ifelse(copper_pheatmap2 > 1, "*", ""), nrow(copper_pheatmap2)),
+         breaks = seq(-5,5,1/10), legend_breaks = seq(-5,5,2.5),
+         annotation_row = annotation_row, 
+         annotation_colors = ann_colors, 
+         cluster_rows=F, 
+         cluster_cols=T,
+         border_color = NA,
+         show_rownames = FALSE,  # 隐藏纵坐标标签
+         show_colnames = FALSE)
+dev.off()
+
+```
+
+

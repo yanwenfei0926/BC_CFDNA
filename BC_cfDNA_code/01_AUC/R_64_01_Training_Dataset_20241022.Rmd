@@ -1,0 +1,392 @@
+---
+html_document: default
+author: "Jia"
+date: '2024-09-26'
+output:
+pdf_document: default
+title: "receiver operating characteristic curve (ROC curve)_training dataset"
+---
+
+```{r}
+rm(list=ls())
+```
+
+# 1. loading library and function
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(tibble))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+
+# 2. loading data
+```{r}
+
+Model_02_GLM <- read.xlsx("./02_GLM_v3/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_02_GLM)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_03_SVM <- read.xlsx("./03_SVM_v3/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_03_SVM)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_05_GBM <- read.xlsx("./05_GBM_v3/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_05_GBM)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_07_XGBoost <- read.xlsx("./07_XGBoost_v3/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_07_XGBoost)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_11_MLP <- read.xlsx("./11_MLP_v3/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_11_MLP)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+Model_21_Stacked_ensemble <- read.xlsx("./21_Stacked_ensemble_v3/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_21_Stacked_ensemble)<-c("Sample", "actual", "predicted", "predicted_prob")
+
+```
+
+# 3. data processed
+
+## 3.2 Model_02_GLM calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_02_GLM$predicted <- factor(Model_02_GLM$predicted, levels = c(0, 1))
+Model_02_GLM$actual <- factor(Model_02_GLM$actual, levels = c(1, 0))
+
+Model_02_GLM_roc <- roc(Model_02_GLM$actual, Model_02_GLM$predicted_prob)
+Model_02_GLM_auc <- auc(Model_02_GLM_roc)
+Model_02_GLM_ci_value <- ci.auc(Model_02_GLM_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_02_GLM_auc, 3)))
+print(paste("95% CI:", round(Model_02_GLM_ci_value[1], 3), "-", round(Model_02_GLM_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_03_SVM$predicted <- factor(Model_03_SVM$predicted, levels = c(0, 1))
+Model_03_SVM$actual <- factor(Model_03_SVM$actual, levels = c(1, 0))
+
+Model_03_SVM_roc <- roc(Model_03_SVM$actual, Model_03_SVM$predicted_prob)
+Model_03_SVM_auc <- auc(Model_03_SVM_roc)
+Model_03_SVM_ci_value <- ci.auc(Model_03_SVM_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_03_SVM_auc, 3)))
+print(paste("95% CI:", round(Model_03_SVM_ci_value[1], 3), "-", round(Model_03_SVM_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_05_GBM$predicted <- factor(Model_05_GBM$predicted, levels = c(0, 1))
+Model_05_GBM$actual <- factor(Model_05_GBM$actual, levels = c(1, 0))
+
+Model_05_GBM_roc <- roc(Model_05_GBM$actual, Model_05_GBM$predicted_prob)
+Model_05_GBM_auc <- auc(Model_05_GBM_roc)
+Model_05_GBM_ci_value <- ci.auc(Model_05_GBM_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_05_GBM_auc, 3)))
+print(paste("95% CI:", round(Model_05_GBM_ci_value[1], 3), "-", round(Model_05_GBM_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_07_XGBoost$predicted <- factor(Model_07_XGBoost$predicted, levels = c(0, 1))
+Model_07_XGBoost$actual <- factor(Model_07_XGBoost$actual, levels = c(1, 0))
+
+Model_07_XGBoost_roc <- roc(Model_07_XGBoost$actual, Model_07_XGBoost$predicted_prob)
+Model_07_XGBoost_auc <- auc(Model_07_XGBoost_roc)
+Model_07_XGBoost_ci_value <- ci.auc(Model_07_XGBoost_roc)
+
+# 打印结果
+print(paste("AUC:", round(Model_07_XGBoost_auc, 3)))
+print(paste("95% CI:", round(Model_07_XGBoost_ci_value[1], 3), "-", round(Model_07_XGBoost_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_11_MLP$predicted <- factor(Model_11_MLP$predicted, levels = c(0, 1))
+Model_11_MLP$actual <- factor(Model_11_MLP$actual, levels = c(1, 0))
+
+Model_11_MLP_roc <- roc(Model_11_MLP$actual, Model_11_MLP$predicted_prob)
+Model_11_MLP_auc <- auc(Model_11_MLP_roc)
+Model_11_MLP_ci_value <- ci.auc(Model_11_MLP_roc)
+
+print(paste("AUC:", round(Model_11_MLP_auc, 3)))
+print(paste("95% CI:", round(Model_11_MLP_ci_value[1], 3), "-", round(Model_11_MLP_ci_value[3], 3)))
+
+```
+
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+Model_21_Stacked_ensemble$predicted <- factor(Model_21_Stacked_ensemble$predicted, levels = c(0, 1))
+Model_21_Stacked_ensemble$actual <- factor(Model_21_Stacked_ensemble$actual, levels = c(1, 0))
+
+Model_21_Stacked_ensemble_roc <- roc(Model_21_Stacked_ensemble$actual, Model_21_Stacked_ensemble$predicted_prob)
+Model_21_Stacked_ensemble_auc <- auc(Model_21_Stacked_ensemble_roc)
+Model_21_Stacked_ensemble_ci_value <- ci.auc(Model_21_Stacked_ensemble_roc)
+
+print(paste("AUC:", round(Model_21_Stacked_ensemble_auc, 3)))
+print(paste("95% CI:", round(Model_21_Stacked_ensemble_ci_value[1], 3), "-", round(Model_21_Stacked_ensemble_ci_value[3], 3)))
+
+```
+# 4. ROC
+## 4.1 prediction and performance
+```{r}
+# Model_02_GLM
+pred_Model_02_GLM <- prediction(Model_02_GLM$predicted_prob, Model_02_GLM$actual)
+perf_auc_Model_02_GLM <- performance(pred_Model_02_GLM, "auc")
+auc_Model_02_GLM <- as.numeric(performance(pred_Model_02_GLM, "auc")@y.values)
+perf_roc_Model_02_GLM <- performance(pred_Model_02_GLM, measure = "tpr", x.measure = "fpr")
+
+# Model_03_SVM
+pred_Model_03_SVM <- prediction(Model_03_SVM$predicted_prob, Model_03_SVM$actual)
+perf_auc_Model_03_SVM <- performance(pred_Model_03_SVM, "auc")
+auc_Model_03_SVM <- as.numeric(performance(pred_Model_03_SVM, "auc")@y.values)
+perf_roc_Model_03_SVM <- performance(pred_Model_03_SVM, measure = "tpr", x.measure = "fpr")
+
+# Model_05_GBM
+pred_Model_05_GBM <- prediction(Model_05_GBM$predicted_prob, Model_05_GBM$actual)
+perf_auc_Model_05_GBM <- performance(pred_Model_05_GBM, "auc")
+auc_Model_05_GBM <- as.numeric(performance(pred_Model_05_GBM, "auc")@y.values)
+perf_roc_Model_05_GBM <- performance(pred_Model_05_GBM, measure = "tpr", x.measure = "fpr")
+
+# Model_07_XGBoost
+pred_Model_07_XGBoost <- prediction(Model_07_XGBoost$predicted_prob, Model_07_XGBoost$actual)
+perf_auc_Model_07_XGBoost <- performance(pred_Model_07_XGBoost, "auc")
+auc_Model_07_XGBoost <- as.numeric(performance(pred_Model_07_XGBoost, "auc")@y.values)
+perf_roc_Model_07_XGBoost <- performance(pred_Model_07_XGBoost, measure = "tpr", x.measure = "fpr")
+
+
+# Model_07_XGBoost
+pred_Model_11_MLP <- prediction(Model_11_MLP$predicted_prob, Model_11_MLP$actual)
+perf_auc_Model_11_MLP <- performance(pred_Model_11_MLP, "auc")
+auc_Model_11_MLP <- as.numeric(performance(pred_Model_11_MLP, "auc")@y.values)
+perf_roc_Model_11_MLP <- performance(pred_Model_11_MLP, measure = "tpr", x.measure = "fpr")
+
+# Model_21_Stacked_ensemble
+pred_Model_21_Stacked_ensemble <- prediction(Model_21_Stacked_ensemble$predicted_prob, Model_21_Stacked_ensemble$actual)
+perf_auc_Model_21_Stacked_ensemble <- performance(pred_Model_21_Stacked_ensemble, "auc")
+auc_Model_21_Stacked_ensemble <- as.numeric(performance(pred_Model_21_Stacked_ensemble, "auc")@y.values)
+perf_roc_Model_21_Stacked_ensemble <- performance(pred_Model_21_Stacked_ensemble, measure = "tpr", x.measure = "fpr")
+
+```
+
+## 4.2 plot1
+```{r}
+# 创建数据框并添加标识列
+
+df1 <- tibble(x = perf_roc_Model_02_GLM@x.values[[1]], y = perf_roc_Model_02_GLM@y.values[[1]], dataset = "GLM")
+
+df2 <- tibble(x = perf_roc_Model_03_SVM@x.values[[1]], y = perf_roc_Model_03_SVM@y.values[[1]], dataset = "SVM")
+
+df3 <- tibble(x = perf_roc_Model_07_XGBoost@x.values[[1]], y = perf_roc_Model_07_XGBoost@y.values[[1]], dataset = "XGBoost")
+
+df4 <- tibble(x = perf_roc_Model_05_GBM@x.values[[1]], y = perf_roc_Model_05_GBM@y.values[[1]], dataset = "GBM")
+
+df5 <- tibble(x = perf_roc_Model_11_MLP@x.values[[1]], y = perf_roc_Model_11_MLP@y.values[[1]], dataset = "MLP")
+
+df6 <- tibble(x = perf_roc_Model_21_Stacked_ensemble@x.values[[1]], y = perf_roc_Model_21_Stacked_ensemble@y.values[[1]], dataset = "Stacked_ensemble")
+
+combined_df <- bind_rows(df1, df2, df3, df4, df5, df6)
+
+combined_df$dataset=factor(combined_df$dataset, levels=c('GLM', 'SVM', 'XGBoost', 'GBM', 'MLP', 'Stacked_ensemble'))
+
+pdf('20250116_01_Training_Dataset_ROC_v1.pdf', width = 8, height = 6)
+# 绘制图形
+ggplot(combined_df, aes(x = x, y = y, color = dataset)) + 
+  geom_line(linetype = "solid", linewidth = 1) +
+  theme_bw() +
+  labs(color="Models", x="False Positive Rate", y="True Positive Rate", fill = "CV", title = "") + 
+  theme(legend.position = "bottom",
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold"))+
+  scale_color_manual(values = c('#2C73D2', '#FF8066', '#01a0a7', '#75c8cc', '#d5b26c', '#d62a56'))+
+  geom_text(aes(x=0.51, y=0, 
+                label=paste0("SEM, ", 
+                             perf_auc_Model_21_Stacked_ensemble@y.values[[1]] %>% 
+                               round(3),
+                             " (",
+                             round(Model_21_Stacked_ensemble_ci_value[1], 3),
+                             "-",
+                             round(Model_21_Stacked_ensemble_ci_value[3], 3),
+                             ")"
+                             )), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x=0.51, y=0.08, 
+                label=paste0("MLP, ", 
+                             perf_auc_Model_11_MLP@y.values[[1]] %>% 
+                               round(3),
+                             " (",
+                             round(Model_11_MLP_ci_value[1], 3),
+                             "-",
+                             round(Model_11_MLP_ci_value[3], 3),
+                             ")"
+                             )), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x=0.51, y=0.16, 
+                label=paste0("GBM, ", 
+                             perf_auc_Model_05_GBM@y.values[[1]] %>% 
+                               round(3),
+                             " (",
+                             round(Model_05_GBM_ci_value[1], 3),
+                             "-",
+                             round(Model_05_GBM_ci_value[3], 3),
+                             ")"
+                             )), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x=0.51, y=0.24, 
+                label=paste0("XGBoost, ", 
+                             perf_auc_Model_07_XGBoost@y.values[[1]] %>% 
+                               round(3),
+                             " (",
+                             round(Model_07_XGBoost_ci_value[1], 3),
+                             "-",
+                             round(Model_07_XGBoost_ci_value[3], 3),
+                             ")"
+                             )), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x=0.51, y=0.32, 
+                label=paste0("SVM, ", 
+                             perf_auc_Model_03_SVM@y.values[[1]] %>% 
+                               round(3),
+                             " (",
+                             round(Model_03_SVM_ci_value[1], 3),
+                             "-",
+                             round(Model_03_SVM_ci_value[3], 3),
+                             ")"
+                             )), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x=0.51, y=0.40, 
+                label=paste0("GLM, ", 
+                             perf_auc_Model_02_GLM@y.values[[1]] %>% 
+                               round(3),
+                             " (",
+                             round(Model_02_GLM_ci_value[1], 3),
+                             "-",
+                             round(Model_02_GLM_ci_value[3], 3),
+                             ")"
+                             )), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  geom_text(aes(x=0.48, y=0.48, 
+                label=paste0("Models, AUC (95% CI)")), 
+            hjust="left", vjust="bottom", size=5, color="black")+
+  theme(axis.text.x = element_text(color="black", size=20),
+        axis.text.y = element_text(color="black", size=20),
+        axis.title.x = element_text( color="black", size=20),
+        axis.title.y = element_text(color="black", size=20))
+dev.off()
+
+```
+
+## 4.3 plot2
+```{r}
+pdf('20250116_01_Training_Dataset_ROC_v2.pdf', width = 8, height = 6)
+
+ggplot(combined_df, aes(x = x, y = y, color = dataset)) + 
+  geom_line(linetype = "solid", linewidth = 1) +
+  theme_bw() +
+  labs(color="Models", x="False Positive Rate", y="True Positive Rate", fill = "CV", title = "") + 
+  theme(legend.position = "NA",
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold")) +
+  scale_color_manual(values = c('#2C73D2', '#FF8066', '#75c8cc', '#4b0082', '#d5b26c', '#d62a56')) +
+  
+  # GLM 文本和颜色线
+  geom_segment(aes(x = 0.43, y = 0.415, xend = 0.47, yend = 0.415), color = "#2C73D2", size = 1) +
+  geom_text(aes(x = 0.48, y = 0.40, 
+                label = paste0("GLM, ", 
+                               perf_auc_Model_02_GLM@y.values[[1]] %>% round(3),
+                               " (",
+                               round(Model_02_GLM_ci_value[1], 3),
+                               "-",
+                               round(Model_02_GLM_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+
+  # SVM 文本和颜色线
+  geom_segment(aes(x = 0.43, y = 0.335, xend = 0.47, yend = 0.335), color = "#FF8066", size = 1) +
+  geom_text(aes(x = 0.48, y = 0.32, 
+                label = paste0("SVM, ", 
+                               perf_auc_Model_03_SVM@y.values[[1]] %>% round(3),
+                               " (",
+                               round(Model_03_SVM_ci_value[1], 3),
+                               "-",
+                               round(Model_03_SVM_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+
+  # RFC 文本和颜色线
+  geom_segment(aes(x = 0.43, y = 0.255, xend = 0.47, yend = 0.255), color = "#75c8cc", size = 1) +
+  geom_text(aes(x = 0.48, y = 0.24, 
+                label = paste0("XGBoost, ", 
+                               perf_auc_Model_07_XGBoost@y.values[[1]] %>% round(3),
+                               " (",
+                               round(Model_07_XGBoost_ci_value[1], 3),
+                               "-",
+                               round(Model_07_XGBoost_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+
+  # GBM 文本和颜色线
+  geom_segment(aes(x = 0.43, y = 0.095, xend = 0.47, yend = 0.095), color = "#4b0082", size = 1) +
+  geom_text(aes(x = 0.48, y = 0.08, 
+                label = paste0("GBM, ", 
+                               perf_auc_Model_05_GBM@y.values[[1]] %>% round(3),
+                               " (",
+                               round(Model_05_GBM_ci_value[1], 3),
+                               "-",
+                               round(Model_05_GBM_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+
+  # XGBoost 文本和颜色线
+  geom_segment(aes(x = 0.43, y = 0.175, xend = 0.47, yend = 0.175), color = "#d5b26c", size = 1) +
+  geom_text(aes(x = 0.48, y = 0.16, 
+                label = paste0("MLP, ", 
+                               perf_auc_Model_11_MLP@y.values[[1]] %>% round(3),
+                               " (",
+                               round(Model_11_MLP_ci_value[1], 3),
+                               "-",
+                               round(Model_11_MLP_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+
+  # Stacked ensemble 文本和颜色线
+  geom_segment(aes(x = 0.43, y = 0.015, xend = 0.47, yend = 0.015), color = "#d62a56", size = 1) +
+  geom_text(aes(x = 0.48, y = 0, 
+                label = paste0("SEM, ", 
+                               perf_auc_Model_21_Stacked_ensemble@y.values[[1]] %>% round(3),
+                               " (",
+                               round(Model_21_Stacked_ensemble_ci_value[1], 3),
+                               "-",
+                               round(Model_21_Stacked_ensemble_ci_value[3], 3),
+                               ")")), 
+            hjust = "left", vjust = "bottom", size = 6, color = "black") +
+  
+  geom_text(aes(x=0.43, y=0.48, 
+                label=paste0("Models, AUC (95% CI)")), 
+            hjust="left", vjust="bottom", size=6, color="black")+
+  
+  theme(axis.text.x = element_text(color = "black", size = 20),
+        axis.text.y = element_text(color = "black", size = 20),
+        axis.title.x = element_text(color = "black", size = 20),
+        axis.title.y = element_text(color = "black", size = 20))
+
+
+dev.off()
+
+```
+

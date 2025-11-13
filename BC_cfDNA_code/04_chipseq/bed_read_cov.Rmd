@@ -1,0 +1,91 @@
+---
+title: "bed_reads_cov"
+author: "Liu"
+date: "2025-01-13"
+output: html_document
+---
+```{r}
+rm(list=ls())
+```
+
+# 1. loading library and function
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+```{r}
+# 设置目标文件夹路径
+folder_path <- "D:/Desktop/LAST_file/gz/"
+output_folder <- "D:/Desktop/LAST_file/output_png/"
+
+# 列出文件夹中所有的 .txt 文件
+txt_files <- list.files(folder_path, pattern = "\\.txt$", recursive = TRUE, full.names = TRUE)
+for (txt_file in txt_files) {
+  
+  print(txt_file)
+  file_parts <- unlist(strsplit(basename(txt_file), "[_.]"))
+  
+  png_parts <- unlist(strsplit(txt_file, "[/.]"))
+  print(png_parts[5])
+  print(file_parts[3])
+  # 读取数据
+  data <- read.table(txt_file, sep = "\t", fill = TRUE)
+  
+  # 数据清洗
+  data <- data[-1, ]  # 去掉第一行
+  data <- data[, 7:46]  # 保留第7到46列
+  
+  # 定义 x 轴并翻转
+  x <- seq(-95, 95, by = 10)
+
+  
+  # 提取数据
+  cancer_values <- as.numeric(data[1, 1:20])  # 癌症组信号
+  healthy_values <- as.numeric(data[1, 21:40])  # 健康组信号
+  
+  # 计算 y 轴范围，去掉空白
+  y_min <- min(c(cancer_values, healthy_values))  # 最小值
+  y_max <- max(c(cancer_values, healthy_values))  # 最大值
+  
+  png(filename = paste0(output_folder, png_parts[5], ".png"), width = 800, height = 600, res = 100)
+  
+  
+  
+  # 绘图
+  plot(x, cancer_values, type = "l", col = "#ff8033", lwd = 3,
+       ylim = c(y_min, y_max),  # 精确设置 y 轴范围
+       xlab = "", ylab = "", 
+       main = file_parts[3],
+       cex.main = 2,
+       xaxt = "n")  # 禁用横坐标的刻度和数字
+  
+  # 添加第二条曲线
+  lines(x, healthy_values, col = "#dda0dd", lwd = 3)
+  
+  # 添加图例
+  legend("topright", legend = c("Healthy", "Cancer"), 
+         col = c("#dda0dd", "#ff8033"), lwd = 3, bty = "n")
+  
+  # 在横轴左下和右下添加 -100 和 100 的标识
+  mtext("-0.1Kb", side = 1, line = 1, at = min(x), adj = 0.5, cex = 1.5)  # 字体放大到 1.5，靠近轴
+  mtext("0.1Kb", side = 1, line = 1, at = max(x), adj = 0.5, cex = 1.5)
+
+  
+  axis(1, at = 0, labels = FALSE, tck = -0.02)  # 在 0 处添加刻度线
+
+  # 添加 TSS 标签
+  mtext("TSS", side = 1, line = 1, at = 0, adj = 0.5, cex = 1.5)
+}
+
+
+```
+

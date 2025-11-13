@@ -1,0 +1,156 @@
+---
+html_document: default
+author: "Jia"
+date: '2024-10-11'
+output:
+pdf_document: default
+title: "receiver operating characteristic curve (ROC curve)"
+---
+
+```{r}
+rm(list=ls())
+```
+
+# 1. loading library and function
+```{r}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+# 2. loading data
+```{r}
+IVD_data <- read.xlsx("02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(IVD_data)<-c("Sample", "actual", "predicted", "predicted_prob")
+```
+
+# 3. data processed
+## 3.1 calculate Accuracy, AUC, PPV, NPV, Sensitivity and Specificity
+```{r}
+# 将 predicted 和 actual 转换为因子并使用相同的水平
+IVD_data$predicted <- factor(IVD_data$predicted, levels = c(0, 1))
+IVD_data$actual <- factor(IVD_data$actual, levels = c(1, 0))
+
+# 计算混淆矩阵
+conf_matrix <- confusionMatrix(IVD_data$predicted, IVD_data$actual)
+
+# 计算准确率
+accuracy <- conf_matrix$overall['Accuracy']
+
+# 计算AUC
+auc <- roc(IVD_data$actual, IVD_data$predicted_prob)$auc
+
+# 计算阳性预测值（PPV）
+ppv <- conf_matrix$byClass['Pos Pred Value']
+
+# 计算阴性预测值（NPV）
+npv <- conf_matrix$byClass['Neg Pred Value']
+
+# 计算敏感性（Sensitivity）
+sensitivity <- conf_matrix$byClass['Sensitivity']
+
+# 计算特异性（Specificity）
+specificity <- conf_matrix$byClass['Specificity']
+
+# 打印结果
+print(paste("Accuracy:", round(accuracy, 3)))
+print(paste("AUC:", round(auc, 3)))
+print(paste("PPV:", round(ppv, 3)))
+print(paste("NPV:", round(npv, 3)))
+print(paste("Sensitivity:", round(sensitivity, 3)))
+print(paste("Specificity:", round(specificity, 3)))
+
+IVD_data_roc <- roc(IVD_data$actual, IVD_data$predicted_prob)
+IVD_data_auc <- auc(IVD_data_roc)
+IVD_data_ci_value <- ci.auc(IVD_data_roc)
+
+# 打印结果
+print(paste("AUC:", round(IVD_data_auc, 3)))
+print(paste("95% CI:", round(IVD_data_ci_value[1], 3), "-", round(IVD_data_ci_value[3], 3)))
+
+```
+
+## 3.2 ROC
+```{r}
+# 创建ROCR预测对象
+pred <- prediction(IVD_data$predicted_prob, IVD_data$actual)
+
+# 计算AUC
+perf_auc <- performance(pred, "auc")
+auc <- as.numeric(performance(pred, "auc")@y.values)
+slotNames(perf_auc)
+
+# 创建ROC曲线
+perf_roc <- performance(pred, measure = "tpr", x.measure = "fpr")
+
+# tibble(x = perf_roc@x.values[[1]], y = perf_roc@y.values[[1]]) %>%
+#   ggplot(aes(x = x, y = y)) + geom_line()
+
+# Benign and Malignant count
+count <- table(IVD_data$actual)
+
+pdf('20250116_02_Internal_Validation_Dataset_ROC_v1.pdf', width = 8, height = 6)
+tibble(x=perf_roc@x.values[[1]], y=perf_roc@y.values[[1]]) %>%
+ggplot(aes(x=x, y=y)) + 
+  geom_line(aes(color=cut(y, c(-1,0.5,0.7,0.9,1))), linewidth=2) +
+  geom_point(aes(color=cut(y, c(-1,0.5,0.7,0.9,1))), size = 1) +
+  theme_bw()+
+  labs(color="TPR", x="False Positive Rate", y="True Positive Rate", fill = "CV", title = "") + #  (x: 1-Specificity, y: Sensitivity)  scale_color_brewer(palette = "Blues") + 
+  scale_color_manual(values = c("#FDE0E0", "#D06666", "#A23333", "#4D0D0D")) +
+  #scale_color_brewer(palette = "#A23333") + 
+  theme(legend.position = "bottom",
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold"))+
+  geom_text(aes(x=0.55, y=0, 
+                label=paste0("AUC (95% CI): ",perf_auc@y.values[[1]] %>% round(3)," (",round(IVD_data_ci_value[1], 3), "-", round(IVD_data_ci_value[3], 3),")")), 
+            hjust="left", vjust="bottom", size=5)+
+  geom_text(aes(x=0.55, y=0.08, 
+                label=paste0("Malignant: ", count[1])), 
+            hjust="left", vjust="bottom", size=5)+
+  geom_text(aes(x=0.55, y=0.16, 
+                label=paste0("Benign: ", count[2])),
+            hjust="left", vjust="bottom", size=5)+
+  theme(axis.text.x = element_text(color="black", size=20),
+        axis.text.y = element_text(color="black", size=20),
+        axis.title.x = element_text(color="black", size=20),
+        axis.title.y = element_text(color="black", size=20))
+dev.off()
+
+```
+
+
+## 3.3 Confusion Matrix heatmap
+```{r}
+conf_matrix_df <- as.data.frame(conf_matrix$table)
+
+conf_matrix_df$Prediction <- factor(conf_matrix_df$Prediction, levels = c("0", "1"))
+
+pdf('20250116_02_Internal_Validation_Dataset_Heatmap_v1.pdf', width = 8, height = 6)
+ggplot(data = conf_matrix_df, aes(x = Prediction, y = Reference)) +
+  geom_tile(aes(fill = Freq), color = "#FFFFFF") +
+  geom_text(aes(label = Freq), vjust = 1, size = 10) + # 调整数字的大小为15
+  scale_fill_gradient(low = "#FFFFFF", high = "#A23333") +
+  theme_minimal() +
+  labs(title = "Internal Validation Dataset", x = "Predicted", y = "Actual") +
+  scale_x_discrete(labels=c("0"="Benign", "1"="Malignant")) +
+  scale_y_discrete(labels=c("0"="Benign", "1"="Malignant")) +
+  theme(legend.position = "right",
+        legend.title = element_text(face = "bold", size = 15),
+        legend.text = element_text(size = 15),
+        axis.title = element_text(face = "bold", size = 20),  # 调整轴标题字号
+        axis.text.x = element_text(face = "bold", color = "black", size = 20),  # 调整x轴标签字号
+        axis.text.y = element_text(face = "bold", color = "black", size = 20),  # 调整y轴标签字号
+        plot.title = element_text(face = "bold", color = "black", size = 20))  # 调整图标题字号
+
+dev.off()
+
+```
+

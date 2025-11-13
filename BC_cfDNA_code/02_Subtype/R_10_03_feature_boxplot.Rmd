@@ -1,0 +1,545 @@
+---
+html_document: default
+author: "Jia"
+date: '2024-10-31'
+output:
+  html_document:
+    df_print: paged
+title: "receiver operating characteristic curve (ROC curve)"
+---
+
+# 1. loading library and function
+```{r}
+rm(list = ls())
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ROCR))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(caret))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ggbeeswarm))
+suppressPackageStartupMessages(library(pacman))
+pacman::p_load(tidyverse,ggpubr,rstatix,ggsci,ggsignif,reshape2)
+suppressPackageStartupMessages(library(openxlsx))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(pheatmap))
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+
+# 2. loading data
+```{r}
+Model_01_ERPR <- read.xlsx("./ERPR_LASSO_02_GLM/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_01_ERPR)<-c("Sample", "actual", "predicted", "predicted_prob")
+Model_01_ERPR <- Model_01_ERPR %>% 
+  filter(actual == 1 & predicted == 1)
+
+Model_02_ERPR <- read.xlsx("./ERPR_LASSO_02_GLM/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_02_ERPR)<-c("Sample", "actual", "predicted", "predicted_prob")
+Model_02_ERPR <- Model_02_ERPR %>% 
+  filter(actual == 1 & predicted == 1)
+
+Model_ERPR <- rbind(Model_01_ERPR, Model_02_ERPR)
+ERPR_top_20 <- Model_ERPR %>%
+  arrange(desc(predicted_prob)) %>%  # 降序排列
+  slice_head(n = 20) 
+
+ERPR <- read.xlsx("./Feature_id/BC_10_subtype_all_ERPR_20241113_v2.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(ERPR)[colnames(ERPR)=="SampleID"] <- "Sample"
+ERPR <- left_join(ERPR_top_20,ERPR, by = "Sample")
+
+#HER2
+Model_01_HER2 <- read.xlsx("./HER2_LASSO_02_GLM/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_01_HER2)<-c("Sample", "actual", "predicted", "predicted_prob")
+Model_01_HER2 <- Model_01_HER2 %>% 
+  filter(actual == 1 & predicted == 1)
+
+Model_02_HER2 <- read.xlsx("./HER2_LASSO_02_GLM/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_02_HER2)<-c("Sample", "actual", "predicted", "predicted_prob")
+Model_02_HER2 <- Model_02_HER2 %>% 
+  filter(actual == 1 & predicted == 1)
+
+Model_HER2 <- rbind(Model_01_HER2, Model_02_HER2)
+HER2_top_20 <- Model_HER2 %>%
+  arrange(desc(predicted_prob)) %>%  # 降序排列
+  slice_head(n = 20) 
+HER2 <- read.xlsx("./Feature_id/BC_10_subtype_all_HER2_20241113_v2.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(HER2)[colnames(HER2)=="SampleID"] <- "Sample"
+HER2 <- left_join(HER2_top_20,HER2, by = "Sample")
+
+
+
+
+Model_01_TNBC <- read.xlsx("./TNBC_LASSO_02_GLM/01_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_01_TNBC)<-c("Sample", "actual", "predicted", "predicted_prob")
+Model_01_TNBC <- Model_01_TNBC %>% 
+  filter(actual == 1 & predicted == 1)
+
+Model_02_TNBC <- read.xlsx("./TNBC_LASSO_02_GLM/02_prediction_results.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(Model_02_TNBC)<-c("Sample", "actual", "predicted", "predicted_prob")
+Model_02_TNBC <- Model_02_TNBC %>% 
+  filter(actual == 1 & predicted == 1)
+
+Model_TNBC <- rbind(Model_01_TNBC, Model_02_TNBC)
+TNBC_top_20 <- Model_TNBC %>%
+  arrange(desc(predicted_prob)) %>%  # 降序排列
+  slice_head(n = 20)
+TNBC <- read.xlsx("./Feature_id/BC_10_subtype_all_TNBC_20241113_v2.xlsx", sheet = 1, skipEmptyRows = FALSE, colNames = TRUE)
+colnames(TNBC)[colnames(TNBC)=="SampleID"] <- "Sample"
+TNBC <- left_join(TNBC_top_20,TNBC, by = "Sample")
+
+
+
+
+```
+
+
+```{r}
+ERPR_1 <- ERPR %>% 
+  dplyr::mutate(status = case_when(status == 0 ~ NA,
+                                   status == 1 ~ "ER+/PR+HER2-"
+                                  )) %>% 
+  distinct()
+
+HER2_1 <- HER2 %>% 
+  dplyr::mutate(status = case_when(status == 0 ~ NA,
+                                   status == 1 ~ "HER2+"
+                                  )) %>% 
+  distinct()
+
+TNBC_1 <- TNBC %>% 
+  dplyr::mutate(status = case_when(status == 0 ~ NA,
+                                   status == 1 ~ "TNBC"
+                                  )) %>% 
+  distinct()
+
+ERPR_1 <- ERPR_1 %>%
+  filter(!is.na(status))
+HER2_1 <- HER2_1 %>%
+  filter(!is.na(status))
+TNBC_1 <- TNBC_1 %>%
+  filter(!is.na(status))
+
+data_feature4 <- bind_rows(ERPR_1, HER2_1, TNBC_1)
+#write.xlsx(data_feature4, "data_feature4.xlsx", rowNames = FALSE, colNames = TRUE)
+
+```
+
+# 3. data processed
+## 3.1 mutate
+```{r}
+# data_feature4 <- data_feature %>% 
+#   dplyr::mutate(status = case_when(status == 0 ~ "ERPR",
+#                                             status == 1 ~ "HER2+",
+#                                             status == 2 ~ "TNBC",
+#                                   )) %>% 
+#   distinct()
+```
+
+
+## 3.2 calculate wilcox between Benign and Malignant, and select significant features 
+```{r}
+
+features <- setdiff(names(data_feature4), c("status","Sample","actual","predicted_prob","predicted","Raw_reads","Raw_bases(G)","Clean_Reads", "Q30(%)", "GC(%)","Mapping_Ratio(%)", "PCR_Duplicates_%", "Optical_Duplicates_%", "Depth", "Coverage","Mean_Reads_Number_Corrected","SD_Read_Number_GC_Corrected","CV_Read_Number_GC_Corrected","Mean_Reads_Number","SD_Read_Number","CV_Read_Number","Min_length","Max_length","Median_length","Mean_length","Median_length","Mean_length","Mode_Length","Mode_length_ratio(%)",">500bp_Ratio(%)","<150bp_Ratio(%)","MEDIAN_INSERT_SIZE","MEAN_INSERT_SIZE","MODE_INSERT_SIZE","meandepth"))
+
+# 初始化一个空的数据框来存储结果
+wilcox_ERPR_1 <- data.frame(Feature = character(),
+                                  P_Value = numeric(),
+                                  median_ERPR = numeric(),
+                                  median_HER2 = numeric(),
+                                  FoldChange = numeric(),
+                                  stringsAsFactors = FALSE)
+
+
+wilcox_ERPR_2 <- data.frame(Feature = character(),
+                                  P_Value = numeric(),
+                                  median_ERPR = numeric(),
+                                  median_TNBC = numeric(),
+                                  FoldChange = numeric(),
+                                  stringsAsFactors = FALSE)
+
+for (feature in features) {
+    group_ERPR <- data_feature4[data_feature4$status == "ER+/PR+HER2-", feature]
+    group_HER2 <- data_feature4[data_feature4$status == "HER2+", feature]
+
+    median_ERPR <- median(group_ERPR, na.rm = TRUE) 
+    median_HER2 <- median(group_HER2, na.rm = TRUE)
+    FoldChange <- median_ERPR/median_HER2
+
+    test_result1 <- wilcox.test(group_ERPR, group_HER2,exact = FALSE)
+    wilcox_ERPR_1 <- rbind(wilcox_ERPR_1, data.frame(Feature = feature,
+                                                     P_Value = test_result1$p.value,
+                                                     median_ERPR = median_ERPR,
+                                                     median_HER2 = median_HER2,
+                                                     FoldChange = FoldChange))
+}
+
+
+for (feature in features) {
+    group_ERPR <- data_feature4[data_feature4$status == "ER+/PR+HER2-", feature]
+    group_TNBC <- data_feature4[data_feature4$status == "TNBC", feature]
+
+    median_ERPR <- median(group_ERPR, na.rm = TRUE)
+    median_TNBC <- median(group_TNBC, na.rm = TRUE)
+    FoldChange <- median_ERPR/median_TNBC
+
+    test_result2 <- wilcox.test(group_ERPR, group_TNBC,exact = FALSE)
+    wilcox_ERPR_2 <- rbind(wilcox_ERPR_2, data.frame(Feature = feature,
+                                                     P_Value = test_result2$p.value,
+                                                     median_ERPR = median_ERPR,
+                                                     median_TNBC = median_TNBC,
+                                                     FoldChange = FoldChange
+                                         ))
+}
+
+wilcox_ERPR_1 <- subset(wilcox_ERPR_1, FoldChange > 1)
+wilcox_ERPR_1 <- subset(wilcox_ERPR_1, P_Value < 0.05)
+wilcox_ERPR_2 <- subset(wilcox_ERPR_2, FoldChange > 1)
+wilcox_ERPR_2 <- subset(wilcox_ERPR_2, P_Value < 0.05)
+
+wilcox_ERPR <- merge(wilcox_ERPR_1, wilcox_ERPR_2, by = "Feature")
+```
+
+
+
+```{r}
+
+wilcox_HER2_1 <- data.frame(Feature = character(),
+                            P_Value = numeric(),
+                            median_HER2 = numeric(),
+                            median_ERPR = numeric(),
+                            FoldChange = numeric(),
+                            stringsAsFactors = FALSE)
+
+wilcox_HER2_2 <- data.frame(Feature = character(),
+                            P_Value = numeric(),
+                            median_HER2 = numeric(),
+                            median_TNBC = numeric(),
+                            FoldChange = numeric(),
+                            stringsAsFactors = FALSE)
+
+for (feature in features) {
+    group_HER2 <- data_feature4[data_feature4$status == "HER2+", feature]
+    group_ERPR <- data_feature4[data_feature4$status == "ER+/PR+HER2-", feature]
+
+    median_HER2 <- median(group_HER2, na.rm = TRUE)
+    median_ERPR <- median(group_ERPR, na.rm = TRUE)
+    FoldChange <- median_HER2/median_ERPR
+
+    test_result3 <- wilcox.test(group_HER2, group_ERPR, exact = FALSE)
+
+    wilcox_HER2_1 <- rbind(wilcox_HER2_1, data.frame(Feature = feature,
+                                         P_Value = test_result3$p.value,
+                                         median_HER2 = median_HER2,
+                                         median_ERPR = median_ERPR,
+                                         FoldChange = FoldChange
+                                         ))
+}
+
+for (feature in features) {
+    group_HER2 <- data_feature4[data_feature4$status == "HER2+", feature]
+    group_TNBC <- data_feature4[data_feature4$status == "TNBC", feature]
+
+    median_TNBC <- median(group_TNBC, na.rm = TRUE)
+    median_HER2 <- median(group_HER2, na.rm = TRUE)
+    FoldChange <- median_HER2/median_TNBC
+    test_result4 <- wilcox.test(group_HER2, group_TNBC, exact = FALSE)
+
+    wilcox_HER2_2 <- rbind(wilcox_HER2_2, data.frame(Feature = feature,
+                                         P_Value = test_result4$p.value,
+                                         median_HER2 = median_HER2,
+                                         median_TNBC = median_TNBC,
+                                         FoldChange = FoldChange
+                                         ))
+}
+
+wilcox_HER2_1 <- subset(wilcox_HER2_1, FoldChange > 1)
+wilcox_HER2_1 <- subset(wilcox_HER2_1, P_Value < 0.05)
+wilcox_HER2_2 <- subset(wilcox_HER2_2, FoldChange > 1)
+wilcox_HER2_2 <- subset(wilcox_HER2_2, P_Value < 0.05)
+
+wilcox_HER2 <- merge(wilcox_HER2_1, wilcox_HER2_2, by = "Feature")
+
+```
+
+
+```{r}
+wilcox_TNBC_1 <- data.frame(Feature = character(),
+                                  P_Value = numeric(),
+                                  median_TNBC = numeric(),
+                                  median_ERPR = numeric(),
+                                  FoldChange = numeric(),
+                                  stringsAsFactors = FALSE)
+wilcox_TNBC_2 <- data.frame(Feature = character(),
+                                  P_Value = numeric(),
+                                  median_TNBC = numeric(),
+                                  median_HER2 = numeric(),
+                                  FoldChange = numeric(),
+                                  stringsAsFactors = FALSE)
+
+
+for (feature in features) {
+    group_TNBC <- data_feature4[data_feature4$status == "TNBC", feature]
+    group_ERPR <- data_feature4[data_feature4$status == "ER+/PR+HER2-", feature]
+
+    median_TNBC <- median(group_TNBC, na.rm = TRUE)
+    median_ERPR <- median(group_ERPR, na.rm = TRUE)
+    FoldChange <- median_TNBC/median_ERPR
+    test_result5 <- wilcox.test(group_TNBC, group_ERPR, exact = FALSE)
+    wilcox_TNBC_1 <- rbind(wilcox_TNBC_1, data.frame(Feature = feature,
+                                         P_Value = test_result5$p.value,
+                                         median_TNBC = median_TNBC,
+                                         median_ERPR = median_ERPR,
+                                         FoldChange = FoldChange
+                                         ))
+}
+for (feature in features) {
+    group_TNBC <- data_feature4[data_feature4$status == "TNBC", feature]
+    group_HER2 <- data_feature4[data_feature4$status == "HER2+", feature]
+
+    median_TNBC <- median(group_TNBC, na.rm = TRUE)
+    median_HER2 <- median(group_HER2, na.rm = TRUE)
+    FoldChange <- median_TNBC/median_HER2
+    test_result6 <- wilcox.test(group_TNBC, group_HER2,  exact = FALSE)
+
+    wilcox_TNBC_2 <- rbind(wilcox_TNBC_2, data.frame(Feature = feature,
+                                         P_Value = test_result6$p.value,
+                                         median_TNBC = median_TNBC,
+                                         median_HER2 = median_HER2,
+                                         FoldChange = FoldChange
+                                         ))
+}
+wilcox_TNBC_1 <- subset(wilcox_TNBC_1, FoldChange > 1)
+wilcox_TNBC_1 <- subset(wilcox_TNBC_1, P_Value < 0.05)
+wilcox_TNBC_2 <- subset(wilcox_TNBC_2, FoldChange > 1)
+wilcox_TNBC_2 <- subset(wilcox_TNBC_2, P_Value < 0.05)
+
+wilcox_TNBC <- merge(wilcox_TNBC_1, wilcox_TNBC_2, by = "Feature")
+
+```
+
+```{r}
+Feature_name <- read.xlsx("./Feature_id/Feature.xlsx", sheet = 1, skipEmptyRows = FALSE, detectDates = TRUE)
+Feature_name <- as.data.frame(t(Feature_name), stringsAsFactors = FALSE)
+Feature_name$Feature_id <- rownames(Feature_name)
+rownames(Feature_name) <- NULL 
+names(Feature_name)[names(Feature_name) == "1"] <- "Feature"
+```
+
+
+```{r}
+wilcox_ERPR <- left_join(wilcox_ERPR, Feature_name, by = "Feature")
+wilcox_HER2 <- left_join(wilcox_HER2, Feature_name, by = "Feature")
+wilcox_TNBC <- left_join(wilcox_TNBC, Feature_name, by = "Feature")
+
+
+
+write.xlsx(wilcox_ERPR, "wilcox_ERPR.xlsx", rowNames = FALSE, colNames = TRUE)
+write.xlsx(wilcox_TNBC, "wilcox_TNBC.xlsx", rowNames = FALSE, colNames = TRUE)
+write.xlsx(wilcox_HER2, "wilcox_HER2.xlsx", rowNames = FALSE, colNames = TRUE)
+
+
+
+```
+
+```{r}
+## 2nd select
+data_Endmotif_HER2 <- data_feature4 %>% 
+  dplyr::select(status, F1210, F1226, F1228, F1258, F1274)
+colnames(data_Endmotif_HER2) <- c("Group_predicted", "CTTGTT", "AATA", "AATG", "AGTA", "ATTA")
+##z-score
+data_Endmotif_HER2[, 2:6] <- scale(data_Endmotif_HER2[, 2:6])
+
+```
+
+```{r}
+
+# 数据处理
+data_long <- pivot_longer(data_Endmotif_HER2, 
+                          cols = c( "CTTGTT", "AATA", "AATG", "AGTA", "ATTA"), 
+                          names_to = "Measure", values_to = "Value")
+
+# 创建一个新的分类变量用于排序
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("CTTGTT.ER+/PR+HER2-","CTTGTT.HER2+","CTTGTT.TNBC",
+                                           "AATA.ER+/PR+HER2-","AATA.HER2+","AATA.TNBC",
+                                           "AATG.ER+/PR+HER2-","AATG.HER2+","AATG.TNBC",
+                                           "AGTA.ER+/PR+HER2-","AGTA.HER2+","AGTA.TNBC",
+                                           "ATTA.ER+/PR+HER2-","ATTA.HER2+","ATTA.TNBC"))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order)) %>%
+  mutate(type = case_when(Group_predicted == "ER+/PR+HER2-" ~ "ERPR",
+                         Group_predicted == "HER2+" ~ "HER2",
+                         Group_predicted == "TNBC" ~ "TNBC")) %>% 
+  distinct()
+
+# 处理缺失值：移除NA
+data_long <- data_long %>%
+  filter(!is.na(Value))  # 确保Value列没有缺失值
+
+# 确保Group_predicted和type列的因子顺序
+data_long$Group_predicted = factor(data_long$Group_predicted, levels = c("ER+/PR+HER2-", "HER2+", "TNBC"))
+data_long$type = factor(data_long$type, levels = c("ERPR", "HER2", "TNBC"))
+
+# 创建箱线图并添加显著性比较横线
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = factor(Group_predicted), color = type)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  theme_classic() +
+  # stat_compare_means(...) 可按需打开
+  scale_fill_manual(values = c("ER+/PR+HER2-" = "#C9DBA5", "HER2+" = "#D4D7EC", "TNBC" = "#F6C39B")) +  # 实心浅色填充
+  scale_color_manual(values = c("ERPR" = "#99B167", "HER2" = "#939CC7", "TNBC" = "#EE852C"), guide = "none") +
+  guides(fill = guide_legend(override.aes = list(
+    shape = 21,
+    size = 14,
+    fill = c("#C9DBA5", "#D4D7EC", "#F6C39B"),
+    color = c("#99B167", "#939CC7", "#EE852C")
+  ))) +
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+# 保存图像
+ggsave("./boxplot_ERPR_HER2_TNBC/20241219_1_Endmotif_boxplot_v1_ERPR.png", PLOT_DATA, height = 7, width = 14, dpi = 300)
+
+```
+
+
+```{r}
+## 2nd select
+data_Endmotif_HER2 <- data_feature4 %>% 
+  dplyr::select(status, F1367, F556, F905, F937, F9985)
+colnames(data_Endmotif_HER2) <- c("Group_predicted", "GCGG", "CNV1", "CNV2", "CNV3", "tRNA-Ser-TCA")
+##z-score
+data_Endmotif_HER2[, 2:6] <- scale(data_Endmotif_HER2[, 2:6])
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Endmotif_HER2, cols = c("GCGG", "CNV1", "CNV2", "CNV3", "tRNA-Ser-TCA"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("GCGG.ER+/PR+HER2-","GCGG.HER2+","GCGG.TNBC",
+                                           "CNV1.ER+/PR+HER2-","CNV1.HER2+","CNV1.TNBC",
+                                           "CNV2.ER+/PR+HER2-","CNV2.HER2+","CNV2.TNBC",
+                                           "CNV3.ER+/PR+HER2-","CNV3.HER2+","CNV3.TNBC",
+                                           "tRNA-Ser-TCA.ER+/PR+HER2-","tRNA-Ser-TCA.HER2+","tRNA-Ser-TCA.TNBC"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+data_long <- data_long %>% 
+  dplyr::mutate(type = case_when(Group_predicted == "ER+/PR+HER2-" ~ "ERPR",
+                                 Group_predicted == "HER2+" ~ "HER2",
+                                 Group_predicted == "TNBC" ~ "TNBC"
+                                  )) %>% 
+  distinct()
+
+data_long$Group_predicted = factor(data_long$Group_predicted, levels=c("HER2+","ER+/PR+HER2-","TNBC"))
+data_long$type = factor(data_long$type, levels=c("HER2","ERPR","TNBC"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = factor(Group_predicted), color = type)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  theme_classic() +
+  # stat_compare_means(...) 可按需打开
+  scale_fill_manual(values = c("ER+/PR+HER2-" = "#C9DBA5", "HER2+" = "#D4D7EC", "TNBC" = "#F6C39B")) +  # 实心浅色填充
+  scale_color_manual(values = c("ERPR" = "#99B167", "HER2" = "#939CC7", "TNBC" = "#EE852C"), guide = "none") +
+  guides(fill = guide_legend(override.aes = list(
+    shape = 21,
+    size = 14,
+    fill = c("#C9DBA5", "#D4D7EC", "#F6C39B"),
+    color = c("#99B167", "#939CC7", "#EE852C")
+  ))) +
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./boxplot_ERPR_HER2_TNBC/20241219_2_Endmotif_boxplot_v1_HER2.png", PLOT_DATA, height = 7, width = 14, dpi = 300)
+
+```
+
+```{r}
+## 2nd select
+data_Endmotif_HER2 <- data_feature4 %>% 
+  dplyr::select(status, F647, F8703, F8448, F9617, F1466)
+colnames(data_Endmotif_HER2) <- c("Group_predicted", "CNV4", "CNV5", "CNV6", "MER83A", "TTTC")
+##z-score
+data_Endmotif_HER2[, 2:6] <- scale(data_Endmotif_HER2[, 2:6])
+
+```
+
+```{r}
+data_long <- pivot_longer(data_Endmotif_HER2, cols = c("CNV4", "CNV5", "CNV6", "MER83A", "TTTC"), names_to = "Measure", values_to = "Value")
+
+data_long$Group_Order <- factor(interaction(data_long$Measure, data_long$Group_predicted),
+                                levels = c("CNV4.ER+/PR+HER2-","CNV4.HER2+","CNV4.TNBC",
+                                           "CNV5.ER+/PR+HER2-","CNV5.HER2+","CNV5.TNBC",
+                                           "CNV6.ER+/PR+HER2-","CNV6.HER2+","CNV6.TNBC",
+                                           "MER83A.ER+/PR+HER2-","MER83A.HER2+","MER83A.TNBC",
+                                           "TTTC.ER+/PR+HER2-","TTTC.HER2+","TTTC.TNBC"
+                                           ))
+
+data_long <- data_long %>%
+  filter(!is.na(Group_Order))
+data_long <- data_long %>% 
+  dplyr::mutate(type = case_when(Group_predicted == "ER+/PR+HER2-" ~ "ERPR",
+                                 Group_predicted == "HER2+" ~ "HER2",
+                                 Group_predicted == "TNBC" ~ "TNBC"
+                                  )) %>% 
+  distinct()
+
+data_long$Group_predicted = factor(data_long$Group_predicted, levels=c("TNBC", "ER+/PR+HER2-", "HER2+"))
+data_long$type = factor(data_long$type, levels=c("TNBC", "ERPR", "HER2"))
+
+PLOT_DATA <- ggplot(data_long, aes(x = Measure, y = Value, fill = factor(Group_predicted), color = type)) + 
+  geom_boxplot(width = 0.4, size = 1) +
+  theme_classic() +
+  # stat_compare_means(...) 可按需打开
+  scale_fill_manual(values = c("ER+/PR+HER2-" = "#C9DBA5", "HER2+" = "#D4D7EC", "TNBC" = "#F6C39B")) +  # 实心浅色填充
+  scale_color_manual(values = c("ERPR" = "#99B167", "HER2" = "#939CC7", "TNBC" = "#EE852C"), guide = "none") +
+  guides(fill = guide_legend(override.aes = list(
+    shape = 21,
+    size = 14,
+    fill = c("#C9DBA5", "#D4D7EC", "#F6C39B"),
+    color = c("#99B167", "#939CC7", "#EE852C")
+  ))) +
+  labs(x = "", y = "Frequencies", title = "", fill = "") +
+  theme(
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(face = "bold", color = "black", size = 20),
+    axis.line = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(0.5, "lines"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, face = "bold", color = "black", size = 24),
+    axis.text.y = element_text(face = "bold", color = "black", size = 24),
+    axis.title.x = element_text(face = "bold", color = "black", size = 24),
+    axis.title.y = element_text(face = "bold", color = "black", size = 24)
+  )
+
+ggsave("./boxplot_ERPR_HER2_TNBC/20241219_3_Endmotif_boxplot_v1_TNBC.png", PLOT_DATA, height = 7, width = 14, dpi = 300)
+
+```
+
+
